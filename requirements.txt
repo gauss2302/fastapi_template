@@ -1,0 +1,9 @@
+redis~=6.4.0
+pydantic~=2.11.7
+sqlalchemy~=2.0.43
+jwt~=1.4.0
+passlib~=1.7.4
+uuid~=1.30
+httpx~=0.28.1
+requests~=2.32.4
+fastapi~=0.116.1
