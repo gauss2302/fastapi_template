@@ -133,3 +133,26 @@ class GoogleUserInfo(BaseModel):
 class GoogleAccountLinkRequest(BaseModel):
     google_code: str
     state: Optional[str] = None
+
+
+#Mobile Auth schemas
+class MobileLogoutRequest(BaseModel):
+    """Request schema for mobile logout."""
+    refresh_token: str
+
+class MobileAuthResponse(BaseModel):
+    """Response schema for mobile authentication."""
+    user: User
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    refresh_expires_in: int
+
+class MobileTokenResponse(BaseModel):
+    """Response schema for mobile token refresh."""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    refresh_expires_in: int

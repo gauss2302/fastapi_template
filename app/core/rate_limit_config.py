@@ -142,6 +142,52 @@ PUBLIC_CONFIGS = {
     ),
 }
 
+# Mobile-specific rate limit configurations
+MOBILE_CONFIGS = {
+    "mobile_registration": RateLimitConfig(
+        calls=3,
+        period=3600,  # 3 registrations per hour per device
+        key_func=lambda
+            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
+    ),
+
+    "mobile_login": RateLimitConfig(
+        calls=10,
+        period=900,  # 10 login attempts per 15 minutes per device
+        burst=3,
+        key_func=lambda
+            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
+    ),
+
+    "mobile_token_refresh": RateLimitConfig(
+        calls=50,
+        period=3600,  # 50 refreshes per hour per device
+        key_func=lambda
+            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
+    ),
+
+    "mobile_oauth": RateLimitConfig(
+        calls=5,
+        period=600,  # 5 OAuth attempts per 10 minutes per device
+        key_func=lambda
+            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
+    ),
+}
+
+
+def mobile_device_key(request: Request) -> str:
+    """Generate rate limit key based on mobile device ID or IP."""
+    device_id = request.headers.get("X-Device-ID")
+    user_agent = request.headers.get("User-Agent", "")
+
+    if device_id:
+        return f"mobile_device:{device_id}"
+
+    # Fallback: Use combination of IP and User-Agent hash for device identification
+    ip = request.client.host if request.client else "unknown"
+    ua_hash = hashlib.md5(user_agent.encode()).hexdigest()[:12]
+    return f"mobile_fallback:{ip}:{ua_hash}"
+
 
 # ============================================================================
 # CONVENIENCE FUNCTIONS
@@ -173,51 +219,6 @@ def get_rate_limit_config(config_name: str, category: str = "auth") -> RateLimit
         raise ValueError(f"Configuration '{config_name}' not found in category '{category}'")
 
     return category_configs[config_name]
-
-
-# ============================================================================
-# USAGE EXAMPLES
-# ============================================================================
-
-"""
-Example usage in endpoints:
-
-1. Using predefined decorators:
-
-@auth_rate_limit
-async def login(...):
-    pass
-
-@strict_rate_limit  
-async def delete_account(...):
-    pass
-
-2. Using custom configurations:
-
-@rate_limit(AUTH_CONFIGS["password_reset"])
-async def reset_password(...):
-    pass
-
-@rate_limit(get_rate_limit_config("file_upload", "api"))
-async def upload_file(...):
-    pass
-
-3. Using inline configurations:
-
-@rate_limit(RateLimitConfig(calls=1, period=60, key_func=user_based_key))
-async def sensitive_operation(...):
-    pass
-
-4. Conditional rate limiting:
-
-@rate_limit(RateLimitConfig(
-    calls=10, 
-    period=60,
-    skip_if=lambda req: req.headers.get("x-premium-user") == "true"
-))
-async def premium_feature(...):
-    pass
-"""
 
 
 # ============================================================================
