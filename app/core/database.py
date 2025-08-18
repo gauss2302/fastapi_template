@@ -12,7 +12,7 @@ engine = create_async_engine(
     max_overflow=20,
 )
 
-AssyncSesssionLocal = sessionmaker(
+AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
 
@@ -20,7 +20,8 @@ Base = declarative_base()
 
 
 async def get_db() -> AsyncSession:
-    async with AssyncSesssionLocal() as session:
+    """Dependency for getting database session."""
+    async with AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()

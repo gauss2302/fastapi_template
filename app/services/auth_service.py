@@ -118,3 +118,15 @@ class GoogleOAuthService:
     async def get_refresh_token(self, user_id: str) -> Optional[str]:
         """Get cached refresh token."""
         return await self.redis_service.get(f"refresh_token:{user_id}")
+
+    async def blacklist_token(self, token: str) -> None:
+        """Add token to blacklist."""
+        await self.redis_service.set(
+            f"blacklist_token:{token}",
+            "true",
+            expire=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60
+        )
+
+    async def is_token_blacklisted(self, token: str) -> bool:
+        """Check if token is blacklisted."""
+        return await self.redis_service.exists(f"blacklist_token:{token}")

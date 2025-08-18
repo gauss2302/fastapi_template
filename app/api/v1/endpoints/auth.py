@@ -1,12 +1,11 @@
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi.responses import JSONResponse
 from typing import Any
 
 from app.schemas.user import (
-    Token,
     GoogleTokenRequest,
     GoogleAccountLinkRequest,
-    RefreshTokenRequest,
     UserRegister,
     UserLogin,
     UserPasswordUpdate,
@@ -14,24 +13,32 @@ from app.schemas.user import (
 )
 from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
-from app.utils.validators import PasswordValidator
 from app.core.dependencies import (
     get_user_service,
     get_google_oauth_service,
     get_current_user,
-    rate_limit_auth,
 )
 from app.core.exceptions import AuthenticationError, ConflictError
+
+# Import rate limiting decorators with fallback
+try:
+    from app.middleware.rate_limiter import auth_rate_limit, strict_rate_limit
+except ImportError:
+    def auth_rate_limit(func):
+        return func
+
+
+    def strict_rate_limit(func):
+        return func
 
 router = APIRouter()
 
 
 @router.post("/register", response_model=User)
+@auth_rate_limit
 async def register(
-    user_data: UserRegister,
-    user_service: UserService = Depends(get_user_service),
-        # SET RATE LIMITTING!!!!
-    _: Any = Depends(rate_limit_auth),
+        user_data: UserRegister,
+        user_service: UserService = Depends(get_user_service),
 ) -> User:
     """Register a new user with email and password."""
     try:
@@ -48,46 +55,47 @@ async def register(
             detail=str(e)
         )
 
+
 @router.post("/login")
+@auth_rate_limit
 async def login(
         login_data: UserLogin,
-        request: Request,
+        response: Response,
         user_service: UserService = Depends(get_user_service),
-        _: None = Depends(rate_limit_auth),
-) -> Token:
+):
     """Login with email and password."""
     try:
-        user, token = await user_service.authenticate_user(login_data)
-        return token
+        user, tokens = await user_service.authenticate_user(login_data)
+
+        # Set refresh token as HttpOnly cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=tokens["refresh_token"],
+            httponly=True,
+            secure=True,  # HTTPS only in production
+            samesite="strict",
+            max_age=tokens["refresh_expires_in"],
+            path="/api/v1/auth"  # Restrict to auth endpoints
+        )
+
+        # Return only access token to client
+        return {
+            "access_token": tokens["access_token"],
+            "token_type": "bearer",
+            "expires_in": tokens["expires_in"],
+            "user": user
+        }
+
     except AuthenticationError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
 
-# @router.post("/password/check-strength", response_model=PasswordStrengthResponse)
-# async def check_password_strength(
-#         password_check: PasswordStrengthCheck,
-#         request: Request,
-#         _: None = Depends(rate_limit_auth),
-# ) -> PasswordStrengthResponse:
-#     """Check password strength and get recommendations."""
-#     is_valid, errors = PasswordValidator.validate_password_strength(password_check.password)
-#     score, description = PasswordValidator.get_password_strength_score(password_check.password)
-#
-#     return PasswordStrengthResponse(
-#         score=score,
-#         description=description,
-#         is_valid=is_valid,
-#         errors=errors
-#     )
-
-
 @router.put("/password")
+@auth_rate_limit
 async def update_password(
         password_data: UserPasswordUpdate,
-        request: Request,
         current_user: User = Depends(get_current_user),
         user_service: UserService = Depends(get_user_service),
-        _: None = Depends(rate_limit_auth),
 ) -> dict[str, str]:
     """Update user password."""
     try:
@@ -100,17 +108,16 @@ async def update_password(
 
 
 @router.get("/google/login")
+@auth_rate_limit
 async def google_login(
-        request: Request,
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
-        _: None = Depends(rate_limit_auth),
 ) -> dict[str, str]:
     """Initiate Google OAuth login."""
     state = secrets.token_urlsafe(32)
 
     await google_oauth_service.cache_oauth_state(state, {
-        "origin": str(request.url_for("google_login")),
-        "timestamp": str(request.state._state.get("timestamp", "")),
+        "origin": "google_login",
+        "timestamp": str(secrets.token_urlsafe(16)),
     })
 
     authorization_url = google_oauth_service.get_authorization_url(state)
@@ -118,14 +125,14 @@ async def google_login(
 
 
 @router.get("/google/callback")
+@auth_rate_limit
 async def google_callback(
         code: str,
         state: str,
-        request: Request,
+        response: Response,
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
         user_service: UserService = Depends(get_user_service),
-        _: None = Depends(rate_limit_auth),
-) -> Token:
+):
     """Handle Google OAuth callback."""
     try:
         cached_state = await google_oauth_service.get_cached_oauth_state(state)
@@ -137,9 +144,25 @@ async def google_callback(
 
         access_token = await google_oauth_service.exchange_code_for_token(code)
         google_user_info = await google_oauth_service.get_user_info(access_token)
-        user, token = await user_service.authenticate_with_google(google_user_info)
+        user, tokens = await user_service.authenticate_with_google(google_user_info)
 
-        return token
+        # Set refresh token as HttpOnly cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=tokens["refresh_token"],
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            max_age=tokens["refresh_expires_in"],
+            path="/api/v1/auth"
+        )
+
+        return {
+            "access_token": tokens["access_token"],
+            "token_type": "bearer",
+            "expires_in": tokens["expires_in"],
+            "user": user
+        }
 
     except AuthenticationError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
@@ -148,13 +171,13 @@ async def google_callback(
 
 
 @router.post("/google/token")
+@auth_rate_limit
 async def google_token_auth(
         token_request: GoogleTokenRequest,
-        request: Request,
+        response: Response,
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
         user_service: UserService = Depends(get_user_service),
-        _: None = Depends(rate_limit_auth),
-) -> Token:
+):
     """Authenticate with Google using authorization code."""
     try:
         if token_request.state:
@@ -167,22 +190,37 @@ async def google_token_auth(
 
         access_token = await google_oauth_service.exchange_code_for_token(token_request.code)
         google_user_info = await google_oauth_service.get_user_info(access_token)
-        user, token = await user_service.authenticate_with_google(google_user_info)
+        user, tokens = await user_service.authenticate_with_google(google_user_info)
 
-        return token
+        # Set refresh token as HttpOnly cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=tokens["refresh_token"],
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            max_age=tokens["refresh_expires_in"],
+            path="/api/v1/auth"
+        )
+
+        return {
+            "access_token": tokens["access_token"],
+            "token_type": "bearer",
+            "expires_in": tokens["expires_in"],
+            "user": user
+        }
 
     except AuthenticationError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
 
 @router.post("/google/link", response_model=User)
+@strict_rate_limit
 async def link_google_account(
         link_request: GoogleAccountLinkRequest,
-        request: Request,
         current_user: User = Depends(get_current_user),
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
         user_service: UserService = Depends(get_user_service),
-        _: None = Depends(rate_limit_auth),
 ) -> User:
     """Link Google account to current user."""
     try:
@@ -207,30 +245,79 @@ async def link_google_account(
 
 @router.post("/refresh")
 async def refresh_token(
-        refresh_request: RefreshTokenRequest,
         request: Request,
+        response: Response,
         user_service: UserService = Depends(get_user_service),
-        _: None = Depends(rate_limit_auth),
-) -> Token:
-    """Refresh access token."""
+):
+    """Refresh access token using HttpOnly cookie."""
+    # Get refresh token from HttpOnly cookie
+    refresh_token = request.cookies.get("refresh_token")
+
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token not found"
+        )
+
     try:
-        return await user_service.refresh_token(refresh_request.refresh_token)
+        # Generate new token pair and rotate refresh token
+        user, new_tokens = await user_service.refresh_token(refresh_token)
+
+        # Set new refresh token as HttpOnly cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=new_tokens["refresh_token"],
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            max_age=new_tokens["refresh_expires_in"],
+            path="/api/v1/auth"
+        )
+
+        # Return only new access token
+        return {
+            "access_token": new_tokens["access_token"],
+            "token_type": "bearer",
+            "expires_in": new_tokens["expires_in"]
+        }
+
     except AuthenticationError as e:
+        # Clear invalid refresh token cookie
+        response.delete_cookie(
+            key="refresh_token",
+            path="/api/v1/auth"
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
 
 @router.post("/logout")
 async def logout(
+        request: Request,
+        response: Response,
         current_user: User = Depends(get_current_user),
         user_service: UserService = Depends(get_user_service),
 ) -> dict[str, str]:
-    """Logout current user."""
-    await user_service.logout(current_user.id)
+    """Logout current user and invalidate refresh token."""
+    # Get refresh token from cookie
+    refresh_token = request.cookies.get("refresh_token")
+
+    # Invalidate refresh token in Redis
+    if refresh_token:
+        await user_service.logout(current_user.id, refresh_token)
+
+    # Clear refresh token cookie
+    response.delete_cookie(
+        key="refresh_token",
+        path="/api/v1/auth"
+    )
+
     return {"message": "Successfully logged out"}
 
 
 @router.get("/me", response_model=User)
-async def get_current_user_info(current_user: User = Depends(get_current_user)) -> User:
+async def get_current_user_info(
+        current_user: User = Depends(get_current_user)
+) -> User:
     """Get current user information."""
     return current_user
 

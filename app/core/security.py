@@ -23,7 +23,11 @@ class SecurityService:
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
 
-        to_encode = {"exp": expire, "sub": str(subject)}
+        to_encode = {
+            "exp": expire,
+            "sub": str(subject),
+            "type": "access"
+        }
         return jwt.encode(
             to_encode,
             settings.SECRET_KEY,
@@ -88,6 +92,7 @@ class SecurityService:
             "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "refresh_expires_in": settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
         }
 
 

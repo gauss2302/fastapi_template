@@ -4,13 +4,14 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.redis import redis_service
 from app.core.exceptions import BaseAPIException
 from app.api.v1.api import api_router
+from app.middleware.rate_limiter import RateLimitMiddleware
 
 # Configure structured logging
 structlog.configure(
@@ -45,6 +46,9 @@ async def lifespan(app: FastAPI):
         await redis_service.init_redis()
         logger.info("Redis connection established")
 
+        # Initialize rate limiting middleware with Redis
+        app.state.redis_service = redis_service
+
         yield
 
     except Exception as e:
@@ -66,6 +70,9 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_STR}/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
 )
+
+# Add rate limiting middleware (before CORS to ensure it runs first)
+app.add_middleware(RateLimitMiddleware, redis_service=redis_service)
 
 # Add security middleware
 app.add_middleware(
@@ -170,7 +177,9 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all requests."""
+    """Log all requests with rate limit info."""
+    start_time = time.time()
+
     logger.info(
         "Request started",
         method=request.method,
@@ -180,12 +189,22 @@ async def log_requests(request: Request, call_next):
 
     response = await call_next(request)
 
+    process_time = time.time() - start_time
+
+    # Extract rate limit info from response headers
+    rate_limit_info = {}
+    for header in ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"]:
+        if header in response.headers:
+            rate_limit_info[header.lower().replace("-", "_")] = response.headers[header]
+
     logger.info(
         "Request completed",
         method=request.method,
         url=str(request.url),
         status_code=response.status_code,
+        process_time=round(process_time, 4),
         client_host=request.client.host if request.client else None,
+        **rate_limit_info
     )
 
     return response
@@ -214,4 +233,31 @@ async def health_check():
         "status": "healthy",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
+    }
+
+
+import time
+
+
+# Rate limit info endpoint
+@app.get("/rate-limit-info")
+async def rate_limit_info(request: Request):
+    """Get current rate limit information for debugging."""
+    if not settings.DEBUG:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return {
+        "client_ip": request.client.host if request.client else "unknown",
+        "user_agent": request.headers.get("user-agent", ""),
+        "forwarded_for": request.headers.get("x-forwarded-for"),
+        "real_ip": request.headers.get("x-real-ip"),
+        "path": request.url.path,
+        "method": request.method,
+        "rate_limit_configs": {
+            "auth": {"calls": 5, "period": 60, "burst": 2},
+            "api": {"calls": 100, "period": 60, "burst": 20},
+            "strict": {"calls": 1, "period": 10},
+            "upload": {"calls": 3, "period": 300, "burst": 1},
+            "public": {"calls": 1000, "period": 3600, "burst": 100},
+        }
     }

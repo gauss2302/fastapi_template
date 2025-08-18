@@ -32,7 +32,7 @@ class UserService:
         db_user = await self.user_repo.create_user_with_password(user_data)
         return User.model_validate(db_user)
 
-    async def authenticate_user(self, login_data: UserLogin) -> tuple[User, Token]:
+    async def authenticate_user(self, login_data: UserLogin) -> tuple[User, dict]:
         """Authenticate user with email and password."""
         db_user = await self.user_repo.authenticate_user(
             login_data.email, login_data.password
@@ -56,9 +56,7 @@ class UserService:
         )
 
         user = User.model_validate(db_user)
-        token = Token(**tokens)
-
-        return user, token
+        return user, tokens
 
     async def create_user(self, user_data: UserCreate) -> User:
         """Create a new user."""
@@ -110,7 +108,7 @@ class UserService:
 
     async def authenticate_with_google(
             self, google_user_info: GoogleUserInfo
-    ) -> tuple[User, Token]:
+    ) -> tuple[User, dict]:
         """Authenticate or register user with Google OAuth."""
         # Try to find existing user by Google ID
         db_user = await self.user_repo.get_by_google_id(google_user_info.id)
@@ -150,9 +148,7 @@ class UserService:
         )
 
         user = User.model_validate(db_user)
-        token = Token(**tokens)
-
-        return user, token
+        return user, tokens
 
     async def link_google_account(
             self, user_id: UUID, google_user_info: GoogleUserInfo
@@ -175,37 +171,46 @@ class UserService:
         db_user = await self.user_repo.link_google_account(user_id, google_user_info.id)
         return User.model_validate(db_user)
 
-    async def refresh_token(self, refresh_token: str) -> Token:
-        """Refresh access token using refresh token."""
-        # Verify refresh token
-        payload = security_service.verify_token(refresh_token)
+    async def refresh_token(self, old_refresh_token: str) -> tuple[User, dict]:
+        """Refresh access token and rotate refresh token."""
+        # Verify old refresh token
+        payload = security_service.verify_token(old_refresh_token)
         if not payload or not payload.sub:
             raise AuthenticationError("Invalid refresh token")
 
         # Check if token is in cache
-        cached_token = await self.google_oauth_service.get_refresh_token(payload.sub)
-        if not cached_token or cached_token != refresh_token:
+        user_id = UUID(payload.sub)
+        cached_token = await self.google_oauth_service.get_refresh_token(str(user_id))
+        if not cached_token or cached_token != old_refresh_token:
             raise AuthenticationError("Refresh token not found or invalid")
 
         # Check if user exists and is active
-        user_id = UUID(payload.sub)
         db_user = await self.user_repo.get_by_id(user_id)
         if not db_user or not db_user.is_active:
             raise AuthenticationError("User not found or inactive")
 
-        # Generate new tokens
+        # Invalidate old refresh token
+        await self.google_oauth_service.revoke_refresh_token(str(user_id))
+
+        # Generate new token pair
         tokens = security_service.create_token_pair(user_id)
 
-        # Update cached refresh token
+        # Cache new refresh token
         await self.google_oauth_service.cache_refresh_token(
             str(user_id), tokens["refresh_token"]
         )
 
-        return Token(**tokens)
+        user = User.model_validate(db_user)
+        return user, tokens
 
-    async def logout(self, user_id: UUID) -> bool:
+    async def logout(self, user_id: UUID, refresh_token: Optional[str] = None) -> bool:
         """Logout user by revoking refresh token."""
         await self.google_oauth_service.revoke_refresh_token(str(user_id))
+
+        # Optionally blacklist the specific refresh token
+        if refresh_token:
+            await self.google_oauth_service.blacklist_token(refresh_token)
+
         return True
 
     async def activate_user(self, user_id: UUID) -> bool:

@@ -1,6 +1,5 @@
 from datetime import datetime
-
-from sqlalchemy import update
+from sqlalchemy import update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import Optional
@@ -39,6 +38,7 @@ class UserRepository:
         return db_user
 
     async def create_user_with_password(self, user_data: UserRegister) -> User:
+        """Create a new user with password."""
         existing_user = await self.get_by_email(user_data.email)
         if existing_user:
             raise ConflictError(f"User with email {user_data.email} already exists")
@@ -140,18 +140,18 @@ class UserRepository:
         return user
 
     async def update_last_login(self, user_id: UUID) -> None:
-        """Update the last login stamp"""
+        """Update the last login timestamp"""
         stmt = (
             update(User)
             .where(User.id == user_id)
-            .values(last_login=datetime.now(), updated_at=datetime.now())
+            .values(last_login=datetime.utcnow(), updated_at=datetime.utcnow())
         )
         await self.db.execute(stmt)
 
     async def activate_user(self, user_id: UUID) -> bool:
         """Activate user account"""
         user = await self.get_by_id(user_id)
-        if not User:
+        if not user:
             return False
         user.is_active = True
         user.updated_at = datetime.utcnow()
@@ -169,21 +169,20 @@ class UserRepository:
     async def get_active_users_count(self) -> int:
         """Get the number of active users"""
         result = await self.db.execute(
-            select(User).where(User.is_active == True)
+            select(func.count(User.id)).where(User.is_active == True)
         )
-
-        return len(result.scalars().all())
+        return result.scalar() or 0
 
     async def link_google_account(self, user_id: UUID, google_id: str) -> User:
-        """Link google to user"""
+        """Link google account to user"""
         user = await self.get_by_id(user_id)
         if not user:
-            raise NotFoundError("No User with this ID")
+            raise NotFoundError("User not found")
 
         existing_google_user = await self.get_by_google_id(google_id)
-        if existing_google_user and existing_google_user != user_id:
+        if existing_google_user and existing_google_user.id != user_id:
             raise ConflictError("Google account already linked to another user")
 
         user.google_id = google_id
-        user.updated_at = datetime.now()
+        user.updated_at = datetime.utcnow()
         return user
