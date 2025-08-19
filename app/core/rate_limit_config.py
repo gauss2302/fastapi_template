@@ -1,18 +1,11 @@
 from fastapi import Request
-from app.middleware.rate_limiter import (
-    RateLimitType,
-    RateLimitConfig,
-    rate_limit,
-    auth_rate_limit,
-    api_rate_limit,
-    strict_rate_limit,
-    upload_rate_limit
-)
+from app.middleware.rate_limiter import RateLimitType, RateLimitConfig
 import hashlib
+from typing import Callable, Optional
 
 
 # ============================================================================
-# CUSTOM KEY FUNCTIONS
+# CUSTOM KEY FUNCTIONS (separate from config classes)
 # ============================================================================
 
 def user_based_key(request: Request) -> str:
@@ -45,136 +38,6 @@ def strict_ip_key(request: Request) -> str:
     return f"strict_ip:{real_ip}"
 
 
-# ============================================================================
-# CUSTOM RATE LIMIT CONFIGURATIONS
-# ============================================================================
-
-# Authentication-related configurations
-AUTH_CONFIGS = {
-    "login": RateLimitConfig(
-        calls=5,
-        period=300,  # 5 attempts per 5 minutes
-        burst=2,
-        key_func=strict_ip_key
-    ),
-
-    "registration": RateLimitConfig(
-        calls=3,
-        period=3600,  # 3 registrations per hour
-        key_func=strict_ip_key
-    ),
-
-    "password_reset": RateLimitConfig(
-        calls=3,
-        period=1800,  # 3 password resets per 30 minutes
-        key_func=user_based_key
-    ),
-
-    "oauth_callback": RateLimitConfig(
-        calls=10,
-        period=60,  # 10 OAuth callbacks per minute
-        key_func=strict_ip_key
-    ),
-}
-
-# API operation configurations
-API_CONFIGS = {
-    "user_profile_update": RateLimitConfig(
-        calls=10,
-        period=300,  # 10 updates per 5 minutes
-        key_func=user_based_key
-    ),
-
-    "file_upload": RateLimitConfig(
-        calls=5,
-        period=300,  # 5 uploads per 5 minutes
-        burst=2,
-        key_func=user_based_key
-    ),
-
-    "search_query": RateLimitConfig(
-        calls=100,
-        period=60,  # 100 searches per minute
-        key_func=user_based_key
-    ),
-
-    "admin_action": RateLimitConfig(
-        calls=20,
-        period=60,  # 20 admin actions per minute
-        key_func=user_based_key,
-        skip_if=lambda req: req.headers.get("x-admin-bypass") == "secret_key"
-    ),
-}
-
-# Security-sensitive configurations
-SECURITY_CONFIGS = {
-    "account_deletion": RateLimitConfig(
-        calls=1,
-        period=86400,  # 1 account deletion per day
-        key_func=user_based_key
-    ),
-
-    "sensitive_data_access": RateLimitConfig(
-        calls=5,
-        period=3600,  # 5 accesses per hour
-        key_func=user_based_key
-    ),
-
-    "admin_login": RateLimitConfig(
-        calls=3,
-        period=1800,  # 3 admin login attempts per 30 minutes
-        key_func=strict_ip_key
-    ),
-}
-
-# Public API configurations
-PUBLIC_CONFIGS = {
-    "health_check": RateLimitConfig(
-        calls=1000,
-        period=60,  # 1000 health checks per minute
-        key_func=lambda req: "global"  # Global limit
-    ),
-
-    "documentation": RateLimitConfig(
-        calls=100,
-        period=60,  # 100 doc requests per minute
-        key_func=strict_ip_key
-    ),
-}
-
-# Mobile-specific rate limit configurations
-MOBILE_CONFIGS = {
-    "mobile_registration": RateLimitConfig(
-        calls=3,
-        period=3600,  # 3 registrations per hour per device
-        key_func=lambda
-            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
-    ),
-
-    "mobile_login": RateLimitConfig(
-        calls=10,
-        period=900,  # 10 login attempts per 15 minutes per device
-        burst=3,
-        key_func=lambda
-            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
-    ),
-
-    "mobile_token_refresh": RateLimitConfig(
-        calls=50,
-        period=3600,  # 50 refreshes per hour per device
-        key_func=lambda
-            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
-    ),
-
-    "mobile_oauth": RateLimitConfig(
-        calls=5,
-        period=600,  # 5 OAuth attempts per 10 minutes per device
-        key_func=lambda
-            req: f"mobile_device:{req.headers.get('X-Device-ID', req.client.host if req.client else 'unknown')}",
-    ),
-}
-
-
 def mobile_device_key(request: Request) -> str:
     """Generate rate limit key based on mobile device ID or IP."""
     device_id = request.headers.get("X-Device-ID")
@@ -187,6 +50,197 @@ def mobile_device_key(request: Request) -> str:
     ip = request.client.host if request.client else "unknown"
     ua_hash = hashlib.md5(user_agent.encode()).hexdigest()[:12]
     return f"mobile_fallback:{ip}:{ua_hash}"
+
+
+def default_ip_key(request: Request) -> str:
+    """Default IP-based key."""
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
+# ============================================================================
+# HELPER FUNCTIONS FOR SKIP CONDITIONS
+# ============================================================================
+
+def admin_bypass_check(request: Request) -> bool:
+    """Check for admin bypass header."""
+    return request.headers.get("x-admin-bypass") == "secret_key"
+
+
+def premium_user_check(request: Request) -> bool:
+    """Check for premium user header."""
+    return request.headers.get("x-premium-user") == "true"
+
+
+# ============================================================================
+# RATE LIMIT CONFIGURATION FACTORY
+# ============================================================================
+
+class RateLimitConfigFactory:
+    """Factory class to create rate limit configurations without serialization issues."""
+
+    @staticmethod
+    def create_config(
+            calls: int,
+            period: int,
+            burst: Optional[int] = None,
+            key_func_name: str = "default_ip",
+            skip_condition: Optional[str] = None
+    ) -> RateLimitConfig:
+        """Create a rate limit configuration with proper function references."""
+
+        # Map function names to actual functions
+        key_func_map = {
+            "default_ip": default_ip_key,
+            "user_based": user_based_key,
+            "strict_ip": strict_ip_key,
+            "mobile_device": mobile_device_key,
+            "ip_and_endpoint": ip_and_endpoint_key,
+        }
+
+        skip_func_map = {
+            "admin_bypass": admin_bypass_check,
+            "premium_user": premium_user_check,
+        }
+
+        key_func = key_func_map.get(key_func_name, default_ip_key)
+        skip_func = skip_func_map.get(skip_condition) if skip_condition else None
+
+        return RateLimitConfig(
+            calls=calls,
+            period=period,
+            burst=burst,
+            key_func=key_func,
+            skip_if=skip_func
+        )
+
+
+# ============================================================================
+# PREDEFINED CONFIGURATIONS USING FACTORY
+# ============================================================================
+
+# Authentication-related configurations
+AUTH_CONFIGS = {
+    "login": RateLimitConfigFactory.create_config(
+        calls=5,
+        period=300,  # 5 attempts per 5 minutes
+        burst=2,
+        key_func_name="strict_ip"
+    ),
+
+    "registration": RateLimitConfigFactory.create_config(
+        calls=3,
+        period=3600,  # 3 registrations per hour
+        key_func_name="strict_ip"
+    ),
+
+    "password_reset": RateLimitConfigFactory.create_config(
+        calls=3,
+        period=1800,  # 3 password resets per 30 minutes
+        key_func_name="user_based"
+    ),
+
+    "oauth_callback": RateLimitConfigFactory.create_config(
+        calls=10,
+        period=60,  # 10 OAuth callbacks per minute
+        key_func_name="strict_ip"
+    ),
+}
+
+# Mobile-specific configurations
+MOBILE_CONFIGS = {
+    "mobile_registration": RateLimitConfigFactory.create_config(
+        calls=3,
+        period=3600,  # 3 registrations per hour per device
+        key_func_name="mobile_device"
+    ),
+
+    "mobile_login": RateLimitConfigFactory.create_config(
+        calls=10,
+        period=900,  # 10 login attempts per 15 minutes per device
+        burst=3,
+        key_func_name="mobile_device"
+    ),
+
+    "mobile_token_refresh": RateLimitConfigFactory.create_config(
+        calls=50,
+        period=3600,  # 50 refreshes per hour per device
+        key_func_name="mobile_device"
+    ),
+
+    "mobile_oauth": RateLimitConfigFactory.create_config(
+        calls=5,
+        period=600,  # 5 OAuth attempts per 10 minutes per device
+        key_func_name="mobile_device"
+    ),
+}
+
+# API operation configurations
+API_CONFIGS = {
+    "user_profile_update": RateLimitConfigFactory.create_config(
+        calls=10,
+        period=300,  # 10 updates per 5 minutes
+        key_func_name="user_based"
+    ),
+
+    "file_upload": RateLimitConfigFactory.create_config(
+        calls=5,
+        period=300,  # 5 uploads per 5 minutes
+        burst=2,
+        key_func_name="user_based"
+    ),
+
+    "search_query": RateLimitConfigFactory.create_config(
+        calls=100,
+        period=60,  # 100 searches per minute
+        key_func_name="user_based"
+    ),
+
+    "admin_action": RateLimitConfigFactory.create_config(
+        calls=20,
+        period=60,  # 20 admin actions per minute
+        key_func_name="user_based",
+        skip_condition="admin_bypass"
+    ),
+}
+
+# Security-sensitive configurations
+SECURITY_CONFIGS = {
+    "account_deletion": RateLimitConfigFactory.create_config(
+        calls=1,
+        period=86400,  # 1 account deletion per day
+        key_func_name="user_based"
+    ),
+
+    "sensitive_data_access": RateLimitConfigFactory.create_config(
+        calls=5,
+        period=3600,  # 5 accesses per hour
+        key_func_name="user_based"
+    ),
+
+    "admin_login": RateLimitConfigFactory.create_config(
+        calls=3,
+        period=1800,  # 3 admin login attempts per 30 minutes
+        key_func_name="strict_ip"
+    ),
+}
+
+# Public API configurations
+PUBLIC_CONFIGS = {
+    "health_check": RateLimitConfigFactory.create_config(
+        calls=1000,
+        period=60,  # 1000 health checks per minute
+        key_func_name="default_ip"
+    ),
+
+    "documentation": RateLimitConfigFactory.create_config(
+        calls=100,
+        period=60,  # 100 doc requests per minute
+        key_func_name="strict_ip"
+    ),
+}
+
+# Merge mobile configs into auth configs
+AUTH_CONFIGS.update(MOBILE_CONFIGS)
 
 
 # ============================================================================

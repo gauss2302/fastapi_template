@@ -1,16 +1,14 @@
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
-from fastapi.responses import JSONResponse
 from typing import Any
 
-from app.core.security import security_service
 from app.schemas.user import (
     GoogleTokenRequest,
     GoogleAccountLinkRequest,
     UserRegister,
     UserLogin,
     UserPasswordUpdate,
-    User, MobileLogoutRequest, RefreshTokenRequest, MobileAuthResponse, MobileTokenResponse,
+    User,
 )
 from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
@@ -27,8 +25,6 @@ try:
 except ImportError:
     def auth_rate_limit(func):
         return func
-
-
     def strict_rate_limit(func):
         return func
 
@@ -37,11 +33,11 @@ router = APIRouter()
 
 @router.post("/register", response_model=User)
 @auth_rate_limit
-async def register(
+async def web_register(
         user_data: UserRegister,
         user_service: UserService = Depends(get_user_service),
 ) -> User:
-    """Register a new user with email and password."""
+    """Register a new user with email and password (web)."""
     try:
         user = await user_service.register_user(user_data)
         return user
@@ -59,12 +55,12 @@ async def register(
 
 @router.post("/login")
 @auth_rate_limit
-async def login(
+async def web_login(
         login_data: UserLogin,
         response: Response,
         user_service: UserService = Depends(get_user_service),
-):
-    """Login with email and password."""
+) -> dict[str, Any]:
+    """Login with email and password (web - uses cookies)."""
     try:
         user, tokens = await user_service.authenticate_user(login_data)
 
@@ -93,12 +89,12 @@ async def login(
 
 @router.put("/password")
 @auth_rate_limit
-async def update_password(
+async def web_update_password(
         password_data: UserPasswordUpdate,
         current_user: User = Depends(get_current_user),
         user_service: UserService = Depends(get_user_service),
 ) -> dict[str, str]:
-    """Update user password."""
+    """Update user password (web)."""
     try:
         await user_service.update_password(current_user.id, password_data)
         return {"message": "Password updated successfully"}
@@ -110,14 +106,14 @@ async def update_password(
 
 @router.get("/google/login")
 @auth_rate_limit
-async def google_login(
+async def web_google_login(
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
 ) -> dict[str, str]:
-    """Initiate Google OAuth login."""
+    """Initiate Google OAuth login (web)."""
     state = secrets.token_urlsafe(32)
 
     await google_oauth_service.cache_oauth_state(state, {
-        "origin": "google_login",
+        "origin": "web_google_login",
         "timestamp": str(secrets.token_urlsafe(16)),
     })
 
@@ -127,14 +123,14 @@ async def google_login(
 
 @router.get("/google/callback")
 @auth_rate_limit
-async def google_callback(
+async def web_google_callback(
         code: str,
         state: str,
         response: Response,
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
         user_service: UserService = Depends(get_user_service),
-):
-    """Handle Google OAuth callback."""
+) -> dict[str, Any]:
+    """Handle Google OAuth callback (web)."""
     try:
         cached_state = await google_oauth_service.get_cached_oauth_state(state)
         if not cached_state:
@@ -173,13 +169,13 @@ async def google_callback(
 
 @router.post("/google/token")
 @auth_rate_limit
-async def google_token_auth(
+async def web_google_token_auth(
         token_request: GoogleTokenRequest,
         response: Response,
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
         user_service: UserService = Depends(get_user_service),
-):
-    """Authenticate with Google using authorization code."""
+) -> dict[str, Any]:
+    """Authenticate with Google using authorization code (web)."""
     try:
         if token_request.state:
             cached_state = await google_oauth_service.get_cached_oauth_state(token_request.state)
@@ -217,13 +213,13 @@ async def google_token_auth(
 
 @router.post("/google/link", response_model=User)
 @strict_rate_limit
-async def link_google_account(
+async def web_link_google_account(
         link_request: GoogleAccountLinkRequest,
         current_user: User = Depends(get_current_user),
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
         user_service: UserService = Depends(get_user_service),
 ) -> User:
-    """Link Google account to current user."""
+    """Link Google account to current user (web)."""
     try:
         if link_request.state:
             cached_state = await google_oauth_service.get_cached_oauth_state(link_request.state)
@@ -245,12 +241,12 @@ async def link_google_account(
 
 
 @router.post("/refresh")
-async def refresh_token(
+async def web_refresh_token(
         request: Request,
         response: Response,
         user_service: UserService = Depends(get_user_service),
-):
-    """Refresh access token using HttpOnly cookie."""
+) -> dict[str, Any]:
+    """Refresh access token using HttpOnly cookie (web)."""
     # Get refresh token from HttpOnly cookie
     refresh_token = request.cookies.get("refresh_token")
 
@@ -292,13 +288,13 @@ async def refresh_token(
 
 
 @router.post("/logout")
-async def logout(
+async def web_logout(
         request: Request,
         response: Response,
         current_user: User = Depends(get_current_user),
         user_service: UserService = Depends(get_user_service),
 ) -> dict[str, str]:
-    """Logout current user and invalidate refresh token."""
+    """Logout current user and invalidate refresh token (web)."""
     # Get refresh token from cookie
     refresh_token = request.cookies.get("refresh_token")
 
@@ -314,235 +310,16 @@ async def logout(
 
     return {"message": "Successfully logged out"}
 
+
 @router.get("/me", response_model=User)
-async def get_current_user_info(
+async def web_get_current_user_info(
         current_user: User = Depends(get_current_user)
 ) -> User:
-    """Get current user information."""
+    """Get current user information (web)."""
     return current_user
 
 
-@router.post("/mobile/register", response_model=MobileAuthResponse)
-@auth_rate_limit
-async def mobile_register(
-        user_data: UserRegister,
-        request: Request,
-        user_service: UserService = Depends(get_user_service),
-) -> dict:
-    """Register a new user via mobile app (returns tokens in response body)."""
-    try:
-        device_id = request.headers.get("X-Device-ID")
-        user, tokens = await user_service.register_mobile_user(user_data, device_id)
-
-        return {
-            "user": user,
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
-            "token_type": "bearer",
-            "expires_in": tokens["expires_in"],
-            "refresh_expires_in": tokens["refresh_expires_in"]
-        }
-    except ConflictError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
-
-@router.post("/mobile/login", response_model=MobileAuthResponse)
-@auth_rate_limit
-async def mobile_login(
-        login_data: UserLogin,
-        request: Request,
-        user_service: UserService = Depends(get_user_service),
-) -> dict:
-    """Login via mobile app (returns tokens in response body)."""
-    try:
-        device_id = request.headers.get("X-Device-ID")
-        user, tokens = await user_service.authenticate_mobile_user(login_data, device_id)
-
-        return {
-            "user": user,
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
-            "token_type": "bearer",
-            "expires_in": tokens["expires_in"],
-            "refresh_expires_in": tokens["refresh_expires_in"]
-        }
-    except AuthenticationError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))(login_data)
-
-        return {
-            "user": user,
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],  # Include in response for mobile
-            "token_type": "bearer",
-            "expires_in": tokens["expires_in"],
-            "refresh_expires_in": tokens["refresh_expires_in"]
-        }
-    except AuthenticationError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
-@router.post("/mobile/refresh", response_model=MobileTokenResponse)
-async def mobile_refresh_token(
-        refresh_request: RefreshTokenRequest,
-        request: Request,
-        user_service: UserService = Depends(get_user_service),
-) -> dict:
-    """Refresh access token for mobile app (no cookies required)."""
-    try:
-        device_id = request.headers.get("X-Device-ID")
-        user, new_tokens = await user_service.refresh_mobile_token(
-            refresh_request.refresh_token, device_id
-        )
-
-        return {
-            "access_token": new_tokens["access_token"],
-            "refresh_token": new_tokens["refresh_token"],
-            "token_type": "bearer",
-            "expires_in": new_tokens["expires_in"],
-            "refresh_expires_in": new_tokens["refresh_expires_in"]
-        }
-    except AuthenticationError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
-@router.post("/mobile/logout")
-async def mobile_logout(
-        logout_request: MobileLogoutRequest,
-        request: Request,
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-) -> dict[str, str]:
-    """Logout mobile user and invalidate refresh token."""
-    device_id = request.headers.get("X-Device-ID")
-    await user_service.logout_mobile_user(
-        current_user.id,
-        logout_request.refresh_token,
-        device_id
-    )
-    return {"message": "Successfully logged out"}
-
-
-@router.get("/mobile/google/login")
-@auth_rate_limit
-async def mobile_google_login(
-        google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
-) -> dict[str, str]:
-    """Initiate Google OAuth login for mobile app."""
-    state = secrets.token_urlsafe(32)
-
-    await google_oauth_service.cache_oauth_state(state, {
-        "origin": "mobile_google_login",
-        "timestamp": str(secrets.token_urlsafe(16)),
-    })
-
-    authorization_url = google_oauth_service.get_authorization_url(state)
-    return {"authorization_url": authorization_url, "state": state}
-
-
-@router.post("/mobile/google/token", response_model=MobileAuthResponse)
-@auth_rate_limit
-async def mobile_google_token_auth(
-        token_request: GoogleTokenRequest,
-        request: Request,
-        google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
-        user_service: UserService = Depends(get_user_service),
-) -> dict:
-    """Authenticate with Google for mobile app (returns tokens in response)."""
-    try:
-        if token_request.state:
-            cached_state = await google_oauth_service.get_cached_oauth_state(token_request.state)
-            if not cached_state:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired state parameter"
-                )
-
-        access_token = await google_oauth_service.exchange_code_for_token(token_request.code)
-        google_user_info = await google_oauth_service.get_user_info(access_token)
-
-        device_id = request.headers.get("X-Device-ID")
-        user, tokens = await user_service.authenticate_with_google_mobile(
-            google_user_info, device_id
-        )
-
-        return {
-            "user": user,
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
-            "token_type": "bearer",
-            "expires_in": tokens["expires_in"],
-            "refresh_expires_in": tokens["refresh_expires_in"]
-        }
-    except AuthenticationError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
-@router.post("/mobile/google/link", response_model=User)
-@strict_rate_limit
-async def mobile_link_google_account(
-        link_request: GoogleAccountLinkRequest,
-        current_user: User = Depends(get_current_user),
-        google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
-        user_service: UserService = Depends(get_user_service),
-) -> User:
-    """Link Google account to current user via mobile app."""
-    try:
-        if link_request.state:
-            cached_state = await google_oauth_service.get_cached_oauth_state(link_request.state)
-            if not cached_state:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired state parameter"
-                )
-
-        access_token = await google_oauth_service.exchange_code_for_token(link_request.google_code)
-        google_user_info = await google_oauth_service.get_user_info(access_token)
-
-        return await user_service.link_google_account(current_user.id, google_user_info)
-
-    except ConflictError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    except AuthenticationError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
-@router.get("/mobile/sessions")
-async def get_mobile_sessions(
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-) -> dict:
-    """Get all active mobile sessions for current user."""
-    sessions = await user_service.get_mobile_sessions(current_user.id)
-    return {
-        "sessions": sessions,
-        "total_count": len(sessions)
-    }
-
-
-@router.delete("/mobile/sessions")
-async def revoke_all_mobile_sessions(
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-) -> dict[str, str]:
-    """Revoke all mobile sessions for current user."""
-    success = await user_service.revoke_all_mobile_sessions(current_user.id)
-    if success:
-        return {"message": "All mobile sessions revoked successfully"}
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to revoke sessions"
-        )
-
 @router.get("/health")
-async def auth_health_check() -> dict[str, str]:
-    """Health check endpoint for auth service."""
-    return {"status": "healthy", "service": "auth"}
+async def web_auth_health_check() -> dict[str, str]:
+    """Health check endpoint for web auth service."""
+    return {"status": "healthy", "service": "web_auth"}

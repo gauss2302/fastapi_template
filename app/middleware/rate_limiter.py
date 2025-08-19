@@ -3,7 +3,7 @@ import hashlib
 from enum import Enum
 from typing import Optional, Callable, Dict, Any, Union
 from functools import wraps
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -27,9 +27,22 @@ class RateLimitConfig:
     calls: int
     period: int  # seconds
     burst: Optional[int] = None  # burst allowance
-    key_func: Optional[Callable[[Request], str]] = None
+    key_func: Optional[Callable[[Request], str]] = field(default=None, repr=False)
     skip_successful: bool = False  # Don't count successful requests
-    skip_if: Optional[Callable[[Request], bool]] = None
+    skip_if: Optional[Callable[[Request], bool]] = field(default=None, repr=False)
+
+    def __post_init__(self):
+        """Ensure functions are not serialized in schema generation."""
+        if self.key_func is None:
+            self.key_func = self._default_key_func
+        if hasattr(self, '__dataclass_fields__'):
+            # Hide callable fields from serialization
+            self.__dataclass_fields__['key_func'].repr = False
+            self.__dataclass_fields__['skip_if'].repr = False
+
+    def _default_key_func(self, request: Request) -> str:
+        """Default key function."""
+        return f"ip:{request.client.host if request.client else 'unknown'}"
 
 
 class RateLimitStorage:
@@ -98,17 +111,24 @@ class RateLimitStorage:
 class RateLimiter:
     """Advanced rate limiter with multiple algorithms."""
 
-    # Predefined configurations
-    CONFIGS = {
-        RateLimitType.AUTH: RateLimitConfig(calls=5, period=60, burst=2),
-        RateLimitType.API: RateLimitConfig(calls=100, period=60, burst=20),
-        RateLimitType.STRICT: RateLimitConfig(calls=1, period=10),
-        RateLimitType.UPLOAD: RateLimitConfig(calls=3, period=300, burst=1),
-        RateLimitType.PUBLIC: RateLimitConfig(calls=1000, period=3600, burst=100),
+    # Predefined configurations - only store simple data, no functions
+    SIMPLE_CONFIGS = {
+        RateLimitType.AUTH: {"calls": 5, "period": 60, "burst": 2},
+        RateLimitType.API: {"calls": 100, "period": 60, "burst": 20},
+        RateLimitType.STRICT: {"calls": 1, "period": 10},
+        RateLimitType.UPLOAD: {"calls": 3, "period": 300, "burst": 1},
+        RateLimitType.PUBLIC: {"calls": 1000, "period": 3600, "burst": 100},
     }
 
     def __init__(self, storage: RateLimitStorage):
         self.storage = storage
+
+    def _get_config(self, limit_type: Union[RateLimitType, RateLimitConfig]) -> RateLimitConfig:
+        """Get configuration from type or return config directly."""
+        if isinstance(limit_type, RateLimitType):
+            config_data = self.SIMPLE_CONFIGS[limit_type]
+            return RateLimitConfig(**config_data)
+        return limit_type
 
     def _get_client_key(self, request: Request, config: RateLimitConfig) -> str:
         """Generate rate limit key for client."""
@@ -149,10 +169,7 @@ class RateLimiter:
         Returns:
             (is_allowed, headers_info)
         """
-        if isinstance(limit_type, RateLimitType):
-            config = self.CONFIGS[limit_type]
-        else:
-            config = limit_type
+        config = self._get_config(limit_type)
 
         # Skip if condition met
         if config.skip_if and config.skip_if(request):
@@ -331,46 +348,3 @@ def strict_rate_limit(func: Callable) -> Callable:
 def upload_rate_limit(func: Callable) -> Callable:
     """Rate limit for file upload endpoints."""
     return rate_limit(RateLimitType.UPLOAD)(func)
-
-
-# Custom key functions
-def user_based_key(request: Request) -> str:
-    """Generate key based on authenticated user."""
-    # Extract user ID from JWT token or session
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        # Here you would decode JWT and extract user ID
-        # For now, use token hash
-        return hashlib.md5(token.encode()).hexdigest()
-
-    # Fallback to IP
-    return request.client.host if request.client else "anonymous"
-
-
-def endpoint_based_key(request: Request) -> str:
-    """Generate key based on specific endpoint."""
-    return f"{request.url.path}:{request.method}"
-
-
-# Example custom configurations
-CUSTOM_CONFIGS = {
-    "user_registration": RateLimitConfig(
-        calls=3,
-        period=3600,  # 3 registrations per hour
-        key_func=lambda req: req.client.host if req.client else "unknown"
-    ),
-
-    "password_reset": RateLimitConfig(
-        calls=5,
-        period=1800,  # 5 password resets per 30 minutes
-        key_func=user_based_key
-    ),
-
-    "admin_actions": RateLimitConfig(
-        calls=10,
-        period=60,
-        key_func=user_based_key,
-        skip_if=lambda req: req.headers.get("x-admin-bypass") == "true"
-    ),
-}

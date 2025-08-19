@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
 
@@ -136,13 +136,14 @@ class GoogleAccountLinkRequest(BaseModel):
 
 
 #Mobile Auth schemas
+# Mobile-specific schemas
 class MobileLogoutRequest(BaseModel):
     """Request schema for mobile logout."""
     refresh_token: str
 
 class MobileAuthResponse(BaseModel):
     """Response schema for mobile authentication."""
-    user: User
+    user: Dict[str, Any]
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
@@ -156,3 +157,24 @@ class MobileTokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     refresh_expires_in: int
+
+class MobileSessionInfo(BaseModel):
+    """Mobile session information."""
+    device_id: Optional[str] = None
+    created_at: Optional[str] = None
+    last_used: Optional[str] = None
+    session_key: Optional[str] = None
+
+class MobileSessionsResponse(BaseModel):
+    """Response for mobile sessions list."""
+    sessions: list[MobileSessionInfo]
+    total_count: int
+    message: Optional[str] = None
+
+class DeviceInfo(BaseModel):
+    """Device information for mobile sessions."""
+    device_id: str
+    device_name: Optional[str] = None
+    platform: Optional[str] = None
+    app_version: Optional[str] = None
+    os_version: Optional[str] = None
