@@ -19,7 +19,10 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     avatar_url = Column(Text, nullable=True)
     hashed_password = Column(String(255), nullable=True)
+
     google_id = Column(String(255), unique=True, index=True, nullable=True)
+    github_id = Column(String(255), unique=True, index=True, nullable=True)
+
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
 

@@ -74,6 +74,13 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_github_id(self, github_id: str) -> Optional[User]:
+        result = await self.db.execute(
+            select(User).where(User.github_id == github_id)
+        )
+
+        return result.scalar_one_or_none()
+
     async def authenticate_user(self, email: str, password: str) -> Optional[User]:
         """Authenticate user with email and password."""
         user = await self.get_by_email(email)
@@ -186,3 +193,27 @@ class UserRepository:
         user.google_id = google_id
         user.updated_at = datetime.utcnow()
         return user
+
+
+    async def link_github_account(self, user_id: UUID, github_id: str) -> User:
+        user = await self.get_by_id(user_id)
+        if not user:
+            raise NotFoundError("User not found")
+
+        existing_github_user = await self.get_by_github_id(github_id)
+        if existing_github_user and existing_github_user.id != user_id:
+            raise ConflictError("GitHub account already linked to another user")
+
+        user.github_id = github_id
+        user.updated_at = datetime.utcnow()
+
+        return user
+
+    async def unlink_github_account(self, user_id: UUID) -> bool:
+        user = await self.get_by_id(user_id)
+        if not user:
+            return False
+
+        user.github_id = None
+        user.updated_at = datetime.utcnow()
+        return True

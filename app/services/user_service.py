@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import GoogleOAuthService
+from app.services.github_auth_service import GitHubOAuthService
 from app.services.mobile_token_service import MobileTokenService  # Add this import
 from app.schemas.user import (
     User,
@@ -15,7 +16,7 @@ from app.schemas.user import (
     UserLogin,
     UserPasswordUpdate,
     GoogleUserInfo,
-    Token,
+    Token, GitHubUserInfo,
 )
 from app.core.security import security_service
 from app.core.exceptions import NotFoundError, AuthenticationError, ConflictError
@@ -26,10 +27,11 @@ class UserService:
             self,
             user_repo: UserRepository,
             google_oauth_service: GoogleOAuthService,
+            github_oauth_service: GitHubOAuthService,
     ):
         self.user_repo = user_repo
         self.google_oauth_service = google_oauth_service
-        # Initialize mobile token service
+        self.github_oauth_service = github_oauth_service
         self.mobile_token_service = MobileTokenService(google_oauth_service.redis_service)
 
     async def register_user(self, user_data: UserRegister) -> User:
@@ -62,8 +64,6 @@ class UserService:
 
         user = User.model_validate(db_user)
         return user, tokens
-
-    # Add these new methods for mobile authentication:
 
     async def register_mobile_user(
             self,
@@ -373,4 +373,159 @@ class UserService:
         return {
             "active_users": active_users_count,
             "timestamp": datetime.utcnow(),
+        }
+
+
+    #GitHub
+
+    async def authenticate_with_github(
+            self, github_user_info: GitHubUserInfo
+    ) -> tuple[User, dict]:
+        """Authenticate or register user with GitHub OAuth."""
+        # Try to find existing user by GitHub ID
+        db_user = await self.user_repo.get_by_github_id(str(github_user_info.id))
+
+        if not db_user:
+            # If no email provided by GitHub, we can't proceed
+            if not github_user_info.email:
+                raise AuthenticationError(
+                    "GitHub account has no public email. Please make your email public or use a different authentication method."
+                )
+
+            # Try to find user by email
+            db_user = await self.user_repo.get_by_email(github_user_info.email)
+
+            if db_user:
+                # Link GitHub account to existing user
+                db_user = await self.user_repo.link_github_account(
+                    db_user.id, str(github_user_info.id)
+                )
+            else:
+                # Create new user
+                user_create = UserCreate(
+                    email=github_user_info.email,
+                    full_name=github_user_info.name or github_user_info.login,
+                    avatar_url=github_user_info.avatar_url,
+                    github_id=str(github_user_info.id),
+                    password=""  # No password for GitHub users
+                )
+                db_user = await self.user_repo.create_with_github(user_create)
+
+        if not db_user.is_active:
+            raise AuthenticationError("User account is deactivated")
+
+        # Update last login
+        await self.user_repo.update_last_login(db_user.id)
+
+        # Generate tokens
+        tokens = security_service.create_token_pair(db_user.id)
+
+        # Cache refresh token
+        await self.google_oauth_service.cache_refresh_token(
+            str(db_user.id), tokens["refresh_token"]
+        )
+
+        user = User.model_validate(db_user)
+        return user, tokens
+
+    async def authenticate_with_github_mobile(
+            self,
+            github_user_info: GitHubUserInfo,
+            device_id: Optional[str] = None,
+            device_info: Optional[dict] = None
+    ) -> tuple[User, dict]:
+        """Authenticate or register user with GitHub OAuth for mobile."""
+        # Try to find existing user by GitHub ID
+        db_user = await self.user_repo.get_by_github_id(str(github_user_info.id))
+
+        if not db_user:
+            # If no email provided by GitHub, we can't proceed
+            if not github_user_info.email:
+                raise AuthenticationError(
+                    "GitHub account has no public email. Please make your email public or use a different authentication method."
+                )
+
+            # Try to find user by email
+            db_user = await self.user_repo.get_by_email(github_user_info.email)
+
+            if db_user:
+                # Link GitHub account to existing user
+                db_user = await self.user_repo.link_github_account(
+                    db_user.id, str(github_user_info.id)
+                )
+            else:
+                # Create new user
+                user_create = UserCreate(
+                    email=github_user_info.email,
+                    full_name=github_user_info.name or github_user_info.login,
+                    avatar_url=github_user_info.avatar_url,
+                    github_id=str(github_user_info.id),
+                    password=""  # No password for GitHub users
+                )
+                db_user = await self.user_repo.create_with_github(user_create)
+
+        if not db_user.is_active:
+            raise AuthenticationError("User account is deactivated")
+
+        # Update last login
+        await self.user_repo.update_last_login(db_user.id)
+
+        # Create mobile session
+        tokens = await self.mobile_token_service.create_mobile_session(
+            db_user.id, device_id, device_info
+        )
+
+        user = User.model_validate(db_user)
+        return user, tokens
+
+    async def link_github_account(
+            self, user_id: UUID, github_user_info: GitHubUserInfo
+    ) -> User:
+        """Link GitHub account to existing user."""
+        # Check if GitHub account is already linked to another user
+        existing_github_user = await self.user_repo.get_by_github_id(str(github_user_info.id))
+        if existing_github_user and existing_github_user.id != user_id:
+            raise ConflictError("GitHub account is already linked to another user")
+
+        # Check if user exists
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise NotFoundError("User not found")
+
+        # If GitHub provides email, verify it matches (optional check)
+        if github_user_info.email and user.email != github_user_info.email:
+            # Allow linking even with different email for GitHub (common case)
+            pass
+
+        # Link GitHub account
+        db_user = await self.user_repo.link_github_account(user_id, str(github_user_info.id))
+
+        # Update avatar if user doesn't have one
+        if not db_user.avatar_url and github_user_info.avatar_url:
+            update_data = UserUpdate(avatar_url=github_user_info.avatar_url)
+            db_user = await self.user_repo.update(user_id, update_data)
+
+        return User.model_validate(db_user)
+
+    async def unlink_github_account(self, user_id: UUID) -> bool:
+        """Unlink GitHub account from user."""
+        return await self.user_repo.unlink_github_account(user_id)
+
+    async def get_user_oauth_providers(self, user_id: UUID) -> dict[str, Optional[str]]:
+        """Get all OAuth providers linked to a user."""
+        return await self.user_repo.get_oauth_providers_for_user(user_id)
+
+    async def get_github_user_profile(self, user_id: UUID) -> Optional[dict]:
+        """Get GitHub profile information for a user (if linked)."""
+        user = await self.user_repo.get_by_id(user_id)
+        if not user or not user.github_id:
+            return None
+
+        # You could extend this to fetch real-time GitHub data
+        # For now, return basic info
+        return {
+            "github_id": user.github_id,
+            "linked_at": user.updated_at.isoformat() if user.updated_at else None,
+            "username": None,  # Could be fetched from GitHub API
+            "public_repos": None,  # Could be fetched from GitHub API
         }

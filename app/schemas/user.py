@@ -14,6 +14,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
     google_id: Optional[str] = None
+    github_id: Optional[str] = None
 
     @field_validator('password')
     @classmethod
@@ -27,6 +28,7 @@ class UserCreate(UserBase):
         if not any(c.isdigit() for c in v):
             raise ValueError('Password must contain at least one digit')
         return v
+
 
 class UserRegister(BaseModel):
     email: EmailStr
@@ -46,9 +48,11 @@ class UserRegister(BaseModel):
             raise ValueError('Password must contain at least one digit')
         return v
 
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
@@ -73,8 +77,6 @@ class UserPasswordUpdate(BaseModel):
         if not any(c.isdigit() for c in v):
             raise ValueError('Password must contain at least one digit')
         return v
-
-
 
 
 class UserInDBBase(UserBase):
@@ -129,17 +131,19 @@ class GoogleUserInfo(BaseModel):
     family_name: Optional[str] = None
     picture: Optional[str] = None
 
+
 # Google account linking
 class GoogleAccountLinkRequest(BaseModel):
     google_code: str
     state: Optional[str] = None
 
 
-#Mobile Auth schemas
+# Mobile Auth schemas
 # Mobile-specific schemas
 class MobileLogoutRequest(BaseModel):
     """Request schema for mobile logout."""
     refresh_token: str
+
 
 class MobileAuthResponse(BaseModel):
     """Response schema for mobile authentication."""
@@ -150,6 +154,7 @@ class MobileAuthResponse(BaseModel):
     expires_in: int
     refresh_expires_in: int
 
+
 class MobileTokenResponse(BaseModel):
     """Response schema for mobile token refresh."""
     access_token: str
@@ -158,6 +163,7 @@ class MobileTokenResponse(BaseModel):
     expires_in: int
     refresh_expires_in: int
 
+
 class MobileSessionInfo(BaseModel):
     """Mobile session information."""
     device_id: Optional[str] = None
@@ -165,11 +171,13 @@ class MobileSessionInfo(BaseModel):
     last_used: Optional[str] = None
     session_key: Optional[str] = None
 
+
 class MobileSessionsResponse(BaseModel):
     """Response for mobile sessions list."""
     sessions: list[MobileSessionInfo]
     total_count: int
     message: Optional[str] = None
+
 
 class DeviceInfo(BaseModel):
     """Device information for mobile sessions."""
@@ -178,3 +186,30 @@ class DeviceInfo(BaseModel):
     platform: Optional[str] = None
     app_version: Optional[str] = None
     os_version: Optional[str] = None
+
+
+# Github
+class GitHubTokenRequest(BaseModel):
+    code: str
+    state: Optional[str] = None
+
+class GitHubAccountLinkRequest(BaseModel):
+    """Request schema for linking GitHub account."""
+    github_code: str
+    state: Optional[str] = None
+
+class GitHubUserInfo(BaseModel):
+    id: int
+    login: str
+    email: Optional[EmailStr]
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    company: Optional[str] = None
+    location: Optional[str] = None
+    blog: Optional[str] = None
+    public_repos: Optional[int] = None
+    followers: Optional[int] = None
+    following: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
