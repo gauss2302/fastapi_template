@@ -347,8 +347,6 @@ async def mobile_get_github_profile(
         )
     return github_profile
 
-
-
 @router.get("/me", response_model=User)
 async def mobile_get_current_user_info(
         current_user: User = Depends(get_current_user)

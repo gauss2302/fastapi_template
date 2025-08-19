@@ -10,6 +10,7 @@ from app.core.security import security_service
 from app.repositories.user_repository import UserRepository
 from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
+from app.services.github_auth_service import GitHubOAuthService  # Add this import
 from app.schemas.user import User
 from app.core.exceptions import AuthenticationError
 
@@ -29,12 +30,20 @@ async def get_google_oauth_service(
     return GoogleOAuthService(redis_service)
 
 
+async def get_github_oauth_service(
+        redis_service: RedisService = Depends(get_redis),
+) -> GitHubOAuthService:
+    """Get GitHub OAuth service dependency."""
+    return GitHubOAuthService(redis_service)
+
+
 async def get_user_service(
         user_repo: UserRepository = Depends(get_user_repository),
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
+        github_oauth_service: GitHubOAuthService = Depends(get_github_oauth_service),  # Add this
 ) -> UserService:
     """Get user service dependency."""
-    return UserService(user_repo, google_oauth_service)
+    return UserService(user_repo, google_oauth_service, github_oauth_service)  # Update this
 
 
 async def get_current_user(
