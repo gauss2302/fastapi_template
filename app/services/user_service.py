@@ -1,5 +1,3 @@
-# Update app/services/user_service.py
-
 from typing import Optional
 from uuid import UUID
 from datetime import datetime

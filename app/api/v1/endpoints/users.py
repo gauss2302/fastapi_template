@@ -10,16 +10,18 @@ from app.core.dependencies import (
     get_user_service,
     get_current_superuser,
 )
+
 router = APIRouter()
 
 
 @router.get("/me", response_model=User)
 @rate_limit
 async def get_my_profile(
-    current_user: User = Depends(get_current_user),
+        current_user: User = Depends(get_current_user),
 ) -> User:
     """Get current user profile."""
     return current_user
+
 
 @router.put("/me", response_model=User)
 @rate_limit
@@ -148,8 +150,8 @@ async def delete_user_by_id(
 @router.get("/stats/overview")
 @rate_limit
 async def get_user_stats(
-    user_service: UserService = Depends(get_user_service),
-    _: User = Depends(get_current_superuser),
+        user_service: UserService = Depends(get_user_service),
+        _: User = Depends(get_current_superuser),
 ) -> dict[str, Any]:
     """Get user statistics (admin only)."""
     stats = await user_service.get_user_stats()

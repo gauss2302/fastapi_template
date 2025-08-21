@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
@@ -74,10 +76,10 @@ app = FastAPI(
 # Add rate limiting middleware (before CORS to ensure it runs first)
 app.add_middleware(RateLimitMiddleware, redis_service=redis_service)
 
-# Add security middleware
+# Security middleware
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["*"] if settings.DEBUG else ["yourdomain.com", "*.yourdomain.com"]
+    allowed_hosts=settings.TRUSTED_HOSTS + (["*"] if settings.DEBUG else [])
 )
 
 # Add CORS middleware

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # Security settings
-    SECRET_KEY: str = Field(default="dev-secret-key-change-in-production-minimum-32-chars", min_length=32)
+    SECRET_KEY: str = Field(min_length=32, description="JWT secret key - must be set in environment")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     ALGORITHM: str = "HS256"
@@ -65,7 +65,16 @@ class Settings(BaseSettings):
     GITHUB_REDIRECT_URI: str = os.getenv("GITHUB_REDIRECT_URI", "")
 
     # CORS settings
-    BACKEND_CORS_ORIGINS: list[str] = Field(default=["**"])
+    BACKEND_CORS_ORIGINS: list[str] = Field(
+        default=["http://localhost:3000"],
+        description="Allowed CORS origins"
+    )
+
+    SECURE_COOKIES: bool = Field(default=True, description="For production")
+    TRUSTED_HOSTS: list[str] = Field(
+        default=["localhost", "127.0.0.1"],
+        description="Trusted host headers"
+    )
 
     # Logging
     LOG_LEVEL: str = "INFO"

@@ -57,6 +57,11 @@ class UserRepository:
         await self.db.refresh(db_user)
         return db_user
 
+    async def create_with_github(self, user_data: UserCreate) -> User:
+        """Create a new user with GitHub OAuth data."""
+        return await self.create(user_data)
+
+
     async def get_by_id(self, user_id: UUID) -> Optional[User]:
         """Get a user by ID"""
         result = await self.db.execute(select(User).where(User.id == user_id))

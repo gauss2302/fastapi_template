@@ -330,21 +330,29 @@ def rate_limit(
 
 
 # Convenience decorators
-def auth_rate_limit(func: Callable) -> Callable:
+def auth_rate_limit(redis_service: Optional[RedisService] = None):
     """Rate limit for authentication endpoints."""
-    return rate_limit(RateLimitType.AUTH)(func)
+    def decorator(func: Callable) -> Callable:
+        return rate_limit(RateLimitType.AUTH, redis_service)(func)
+    return decorator
 
 
-def api_rate_limit(func: Callable) -> Callable:
+def api_rate_limit(redis_service: Optional[RedisService] = None):
     """Rate limit for general API endpoints."""
-    return rate_limit(RateLimitType.API)(func)
+    def decorator(func: Callable) -> Callable:
+        return rate_limit(RateLimitType.API, redis_service)(func)
+    return decorator
 
 
-def strict_rate_limit(func: Callable) -> Callable:
+def strict_rate_limit(redis_service: Optional[RedisService] = None):
     """Strict rate limit for sensitive endpoints."""
-    return rate_limit(RateLimitType.STRICT)(func)
+    def decorator(func: Callable) -> Callable:
+        return rate_limit(RateLimitType.STRICT, redis_service)(func)
+    return decorator
 
 
-def upload_rate_limit(func: Callable) -> Callable:
+def upload_rate_limit(redis_service: Optional[RedisService] = None):
     """Rate limit for file upload endpoints."""
-    return rate_limit(RateLimitType.UPLOAD)(func)
+    def decorator(func: Callable) -> Callable:
+        return rate_limit(RateLimitType.UPLOAD, redis_service)(func)
+    return decorator
