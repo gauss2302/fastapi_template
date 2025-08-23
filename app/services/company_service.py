@@ -463,4 +463,11 @@ class CompanyService:
 
     async def update_recruiter_activity(self, user_id: UUID) -> None:
         """Update recruiter's last activity (call this on authenticated requests)"""
-        await self.recruiter_repo.update_last_activity_by_user_id(user_id)
+        try:
+            # Проверяем, является ли пользователь рекрутером
+            recruiter = await self.recruiter_repo.get_by_user_id(user_id)
+            if recruiter:
+                await self.recruiter_repo.update_last_activity_by_user_id(user_id)
+        except Exception:
+            # Игнорируем ошибки - это не критично для основного функционала
+            pass

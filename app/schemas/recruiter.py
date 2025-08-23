@@ -1,4 +1,3 @@
-# app/schemas/recruiter.py - All recruiter schemas
 from pydantic import BaseModel, EmailStr, Field, field_validator, HttpUrl
 from typing import Optional, Dict, Any
 from datetime import datetime

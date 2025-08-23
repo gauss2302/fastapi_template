@@ -13,7 +13,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.company_service import CompanyService
 from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
-from app.services.github_auth_service import GitHubOAuthService  # Add this import
+from app.services.github_auth_service import GitHubOAuthService
 from app.schemas.user import User
 from app.core.exceptions import AuthenticationError
 
@@ -54,10 +54,10 @@ async def get_github_oauth_service(
 async def get_user_service(
         user_repo: UserRepository = Depends(get_user_repository),
         google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
-        github_oauth_service: GitHubOAuthService = Depends(get_github_oauth_service),  # Add this
+        github_oauth_service: GitHubOAuthService = Depends(get_github_oauth_service),
 ) -> UserService:
     """Get user service dependency."""
-    return UserService(user_repo, google_oauth_service, github_oauth_service)  # Update this
+    return UserService(user_repo, google_oauth_service, github_oauth_service)
 
 
 async def get_current_user(
@@ -134,18 +134,7 @@ async def get_authenticated_user_id(
     return current_user.id
 
 
-# Company Deps
-
-
-async def get_user_service(
-        user_repo: UserRepository = Depends(get_user_repository),
-        google_oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
-        github_oauth_service: GitHubOAuthService = Depends(get_github_oauth_service),
-) -> UserService:
-    """Get user service dependency."""
-    return UserService(user_repo, google_oauth_service, github_oauth_service)
-
-
+# Company Deps - исправлено дублирование
 async def get_company_service(
         company_repo: CompanyRepository = Depends(get_company_repository),
         recruiter_repo: RecruiterRepository = Depends(get_recruiter_repository),
@@ -161,6 +150,7 @@ async def update_recruiter_activity(
 ) -> None:
     """Update recruiter activity for authenticated requests"""
     try:
+        # Только обновляем активность, если пользователь является рекрутером
         await company_service.update_recruiter_activity(current_user.id)
     except Exception:
         # Don't fail the request if activity update fails

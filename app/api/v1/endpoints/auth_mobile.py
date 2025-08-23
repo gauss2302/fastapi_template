@@ -1,3 +1,4 @@
+# app/api/v1/endpoints/auth_mobile.py - Fixed version (key parts)
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from typing import Any, Optional
@@ -25,7 +26,7 @@ from app.core.security import security_service
 
 # Import rate limiting decorators with fallback
 try:
-    from app.middleware.rate_limiter import auth_rate_limit, strict_rate_limit
+    from app.middleware.rate_limiter import auth_rate_limit, strict_rate_limit, rate_limit, RateLimitType
 except ImportError:
     def auth_rate_limit(func):
         return func
@@ -33,6 +34,13 @@ except ImportError:
 
     def strict_rate_limit(func):
         return func
+
+
+    def rate_limit(limit_type):
+        def decorator(func):
+            return func
+
+        return decorator
 
 router = APIRouter()
 
@@ -241,143 +249,12 @@ async def mobile_github_login(
     return {"authorization_url": authorization_url, "state": state}
 
 
-@router.post("/github/token")
-@auth_rate_limit
-async def mobile_github_token_auth(
-        token_request: GitHubTokenRequest,
-        request: Request,
-        github_oauth_service: GitHubOAuthService = Depends(get_github_oauth_service),
-        user_service: UserService = Depends(get_user_service),
-) -> dict[str, Any]:
-    """Authenticate with GitHub for mobile app (returns tokens in response)."""
-    try:
-        if token_request.state:
-            cached_state = await github_oauth_service.get_cached_oauth_state(token_request.state)
-            if not cached_state:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired state parameter"
-                )
-
-        access_token = await github_oauth_service.exchange_code_for_token(token_request.code)
-        github_user_info = await github_oauth_service.get_user_info(access_token)
-
-        # Get device info for mobile
-        device_id = request.headers.get("X-Device-ID")
-        device_info = {
-            "platform": request.headers.get("X-Platform", "unknown"),
-            "app_version": request.headers.get("X-App-Version", "unknown"),
-            "os_version": request.headers.get("X-OS-Version", "unknown"),
-            "device_model": request.headers.get("X-Device-Model", "unknown"),
-        }
-
-        user, tokens = await user_service.authenticate_with_github_mobile(
-            github_user_info, device_id, device_info
-        )
-
-        return {
-            "user": user.model_dump(),
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
-            "token_type": "bearer",
-            "expires_in": tokens["expires_in"],
-            "refresh_expires_in": tokens["refresh_expires_in"]
-        }
-    except AuthenticationError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
-@router.post("/github/link", response_model=User)
-@strict_rate_limit
-async def mobile_link_github_account(
-        link_request: GitHubAccountLinkRequest,
-        current_user: User = Depends(get_current_user),
-        github_oauth_service: GitHubOAuthService = Depends(get_github_oauth_service),
-        user_service: UserService = Depends(get_user_service),
-) -> User:
-    """Link GitHub account to current user via mobile app."""
-    try:
-        if link_request.state:
-            cached_state = await github_oauth_service.get_cached_oauth_state(link_request.state)
-            if not cached_state:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired state parameter"
-                )
-
-        access_token = await github_oauth_service.exchange_code_for_token(link_request.github_code)
-        github_user_info = await github_oauth_service.get_user_info(access_token)
-
-        return await user_service.link_github_account(current_user.id, github_user_info)
-
-    except ConflictError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    except AuthenticationError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
-@router.delete("/github/unlink")
-@strict_rate_limit
-async def mobile_unlink_github_account(
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-) -> dict[str, str]:
-    """Unlink GitHub account from current user (mobile)."""
-    success = await user_service.unlink_github_account(current_user.id)
-    if success:
-        return {"message": "GitHub account unlinked successfully"}
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to unlink GitHub account"
-        )
-
-
-@router.get("/github/profile")
-async def mobile_get_github_profile(
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-) -> dict[str, Any]:
-    """Get GitHub profile information for current user (mobile)."""
-    github_profile = await user_service.get_github_user_profile(current_user.id)
-    if not github_profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No GitHub account linked"
-        )
-    return github_profile
-
 @router.get("/me", response_model=User)
 async def mobile_get_current_user_info(
         current_user: User = Depends(get_current_user)
 ) -> User:
     """Get current user information (mobile)."""
     return current_user
-
-
-@router.get("/sessions")
-async def mobile_get_sessions(
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-) -> dict[str, Any]:
-    """Get all active mobile sessions for current user."""
-    # For now, return a simple response since we don't have the mobile service implemented yet
-    return {
-        "sessions": [],
-        "total_count": 0,
-        "message": "Mobile session management not yet implemented"
-    }
-
-
-@router.delete("/sessions")
-async def mobile_revoke_all_sessions(
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service),
-) -> dict[str, str]:
-    """Revoke all mobile sessions for current user."""
-    # For now, just logout the current user
-    await user_service.logout(current_user.id)
-    return {"message": "All mobile sessions revoked successfully"}
 
 
 @router.get("/health")

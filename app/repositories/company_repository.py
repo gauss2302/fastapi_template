@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from typing import Optional, List, Tuple
 from uuid import UUID
 import re
+from pydantic import HttpUrl
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.company import Company, CompanyStatus
@@ -24,6 +25,16 @@ class CompanyRepository:
         slug = re.sub(r'[-\s]+', '-', slug)
         return slug.strip('-')
 
+    def _convert_urls_to_strings(self, data_dict: dict) -> dict:
+        """Convert HttpUrl objects to strings for database storage"""
+        converted = {}
+        for key, value in data_dict.items():
+            if isinstance(value, HttpUrl):
+                converted[key] = str(value)
+            else:
+                converted[key] = value
+        return converted
+
     async def create(self, company_data: CompanyCreate) -> Company:
         """Create a new company"""
         # Check if company name already exists
@@ -41,6 +52,28 @@ class CompanyRepository:
 
         company_dict = company_data.model_dump()
         company_dict['slug'] = slug
+
+        # Convert HttpUrl objects to strings
+        company_dict = self._convert_urls_to_strings(company_dict)
+
+        # ОТЛАДКА: Логируем company_size
+        print(f"DEBUG: company_size type: {type(company_dict.get('company_size'))}")
+        print(f"DEBUG: company_size value: {company_dict.get('company_size')}")
+        print(f"DEBUG: company_size repr: {repr(company_dict.get('company_size'))}")
+
+        # Принудительно конвертируем enum в строку если нужно
+        if 'company_size' in company_dict and company_dict['company_size'] is not None:
+            company_size_value = company_dict['company_size']
+            if hasattr(company_size_value, 'value'):
+                # Это enum объект
+                company_dict['company_size'] = company_size_value.value
+                print(f"DEBUG: Converted enum to string: {company_dict['company_size']}")
+            elif isinstance(company_size_value, str):
+                # Это уже строка, проверим что она в нижнем регистре
+                company_dict['company_size'] = company_size_value.lower()
+                print(f"DEBUG: Lowercased string: {company_dict['company_size']}")
+
+        print(f"DEBUG: Final company_dict: {company_dict}")
 
         db_company = Company(**company_dict)
         self.db.add(db_company)
@@ -103,6 +136,10 @@ class CompanyRepository:
         update_data = company_data.model_dump(exclude_unset=True)
         if update_data:
             update_data["updated_at"] = datetime.utcnow()
+
+            # Convert HttpUrl objects to strings
+            update_data = self._convert_urls_to_strings(update_data)
+
             stmt = (
                 update(Company)
                 .where(Company.id == company_id)

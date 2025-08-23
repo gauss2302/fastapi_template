@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, Column, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
 
@@ -39,5 +40,24 @@ class User(Base):
     )
     last_login = Column(DateTime(timezone=True), nullable=True)
 
+    # Опциональная связь с recruiter - может быть None для обычных пользователей
+    recruiter_profile = relationship(
+        "Recruiter",
+        back_populates="user",
+        uselist=False,  # One-to-one relationship
+        cascade="all, delete-orphan",
+        lazy="select"  # Не загружать автоматически
+    )
+
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email})>"
+
+    @property
+    def is_recruiter(self) -> bool:
+        """Проверить, является ли пользователь рекрутером"""
+        return self.recruiter_profile is not None
+
+    @property
+    def user_type(self) -> str:
+        """Получить тип пользователя"""
+        return "recruiter" if self.is_recruiter else "user"

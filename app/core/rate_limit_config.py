@@ -1,7 +1,7 @@
 from fastapi import Request
 from app.middleware.rate_limiter import RateLimitType, RateLimitConfig
 import hashlib
-from typing import Callable, Optional
+from typing import Optional
 
 
 # ============================================================================

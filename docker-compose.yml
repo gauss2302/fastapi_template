@@ -11,7 +11,7 @@ services:
     env_file:
       - .env.example
     environment:
-      # Override settings for containerized environment
+      - DEBUG=true
       - POSTGRES_SERVER=postgres
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/postgres

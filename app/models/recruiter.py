@@ -1,4 +1,4 @@
-# app/models/recruiter.py
+# app/models/recruiter.py - Fixed version
 from sqlalchemy import Boolean, Column, DateTime, String, Text, ForeignKey, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -70,7 +70,7 @@ class Recruiter(Base):
         nullable=False,
     )
 
-    # Relationships
+    # Relationships - Fixed to match User model
     user = relationship("User", back_populates="recruiter_profile")
     company = relationship("Company", back_populates="recruiters")
     approved_by_recruiter = relationship("Recruiter", remote_side=[id])

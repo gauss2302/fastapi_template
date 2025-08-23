@@ -3,7 +3,6 @@ import hashlib
 from enum import Enum
 from typing import Optional, Callable, Dict, Any, Union
 from functools import wraps
-from dataclasses import dataclass, field
 
 from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,28 +20,36 @@ class RateLimitType(str, Enum):
     PUBLIC = "public"
 
 
-@dataclass
-class RateLimitConfig:
-    """Rate limiting configuration."""
-    calls: int
-    period: int  # seconds
-    burst: Optional[int] = None  # burst allowance
-    key_func: Optional[Callable[[Request], str]] = field(default=None, repr=False)
-    skip_successful: bool = False  # Don't count successful requests
-    skip_if: Optional[Callable[[Request], bool]] = field(default=None, repr=False)
+class _RateLimitConfig:
+    """Внутренняя конфигурация rate limiting - НЕ экспортируется в OpenAPI."""
 
-    def __post_init__(self):
-        """Ensure functions are not serialized in schema generation."""
-        if self.key_func is None:
-            self.key_func = self._default_key_func
-        if hasattr(self, '__dataclass_fields__'):
-            # Hide callable fields from serialization
-            self.__dataclass_fields__['key_func'].repr = False
-            self.__dataclass_fields__['skip_if'].repr = False
+    def __init__(
+            self,
+            calls: int,
+            period: int,
+            burst: Optional[int] = None,
+            key_func: Optional[Callable[[Request], str]] = None,
+            skip_successful: bool = False,
+            skip_if: Optional[Callable[[Request], bool]] = None
+    ):
+        self.calls = calls
+        self.period = period
+        self.burst = burst
+        self.skip_successful = skip_successful
+        self._key_func = key_func if key_func else self._default_key_func
+        self._skip_if = skip_if
 
     def _default_key_func(self, request: Request) -> str:
         """Default key function."""
         return f"ip:{request.client.host if request.client else 'unknown'}"
+
+    @property
+    def key_func(self) -> Callable[[Request], str]:
+        return self._key_func
+
+    @property
+    def skip_if(self) -> Optional[Callable[[Request], bool]]:
+        return self._skip_if
 
 
 class RateLimitStorage:
@@ -123,14 +130,14 @@ class RateLimiter:
     def __init__(self, storage: RateLimitStorage):
         self.storage = storage
 
-    def _get_config(self, limit_type: Union[RateLimitType, RateLimitConfig]) -> RateLimitConfig:
+    def _get_config(self, limit_type: Union[RateLimitType, _RateLimitConfig]) -> _RateLimitConfig:
         """Get configuration from type or return config directly."""
         if isinstance(limit_type, RateLimitType):
             config_data = self.SIMPLE_CONFIGS[limit_type]
-            return RateLimitConfig(**config_data)
+            return _RateLimitConfig(**config_data)
         return limit_type
 
-    def _get_client_key(self, request: Request, config: RateLimitConfig) -> str:
+    def _get_client_key(self, request: Request, config: _RateLimitConfig) -> str:
         """Generate rate limit key for client."""
         if config.key_func:
             identifier = config.key_func(request)
@@ -161,7 +168,7 @@ class RateLimiter:
     async def check_rate_limit(
             self,
             request: Request,
-            limit_type: Union[RateLimitType, RateLimitConfig]
+            limit_type: Union[RateLimitType, _RateLimitConfig]
     ) -> tuple[bool, Dict[str, Any]]:
         """
         Check if request should be rate limited.
@@ -271,21 +278,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return None
 
 
-# Decorators for endpoint-specific rate limiting
-def rate_limit(
-        limit_type: Union[RateLimitType, RateLimitConfig],
-        redis_service: Optional[RedisService] = None
-):
+# ПУБЛИЧНАЯ функция для создания конфигурации (без Callable в типах)
+def create_rate_limit_config(calls: int, period: int, burst: Optional[int] = None) -> _RateLimitConfig:
+    """Создать простую конфигурацию rate limiting без функций."""
+    return _RateLimitConfig(calls=calls, period=period, burst=burst)
+
+
+# Fixed decorators for endpoint-specific rate limiting
+def rate_limit(limit_type: RateLimitType = RateLimitType.API):
     """
     Decorator for rate limiting specific endpoints.
 
     Usage:
         @rate_limit(RateLimitType.AUTH)
         async def login(...):
-            ...
-
-        @rate_limit(RateLimitConfig(calls=3, period=60))
-        async def upload_file(...):
             ...
     """
 
@@ -294,19 +300,25 @@ def rate_limit(
         async def wrapper(*args, **kwargs) -> Any:
             # Extract Request from function parameters
             request = None
+
+            # Look for Request in args (common in FastAPI endpoints)
             for arg in args:
                 if isinstance(arg, Request):
                     request = arg
                     break
 
+            # Look for Request in kwargs
             if not request:
-                # Try to find in kwargs
                 for value in kwargs.values():
                     if isinstance(value, Request):
                         request = value
                         break
 
+            # If we found a request, apply rate limiting
             if request:
+                # Get Redis service from app state if available
+                redis_service = getattr(request.app.state, 'redis_service', None)
+
                 # Apply rate limiting
                 storage = RateLimitStorage(redis_service)
                 rate_limiter = RateLimiter(storage)
@@ -329,30 +341,49 @@ def rate_limit(
     return decorator
 
 
-# Convenience decorators
-def auth_rate_limit(redis_service: Optional[RedisService] = None):
+# Convenience decorators with proper implementation
+def auth_rate_limit(func: Callable = None):
     """Rate limit for authentication endpoints."""
-    def decorator(func: Callable) -> Callable:
-        return rate_limit(RateLimitType.AUTH, redis_service)(func)
-    return decorator
+    if func is None:
+        # Called as @auth_rate_limit()
+        return rate_limit(RateLimitType.AUTH)
+    else:
+        # Called as @auth_rate_limit
+        return rate_limit(RateLimitType.AUTH)(func)
 
 
-def api_rate_limit(redis_service: Optional[RedisService] = None):
+def api_rate_limit(func: Callable = None):
     """Rate limit for general API endpoints."""
-    def decorator(func: Callable) -> Callable:
-        return rate_limit(RateLimitType.API, redis_service)(func)
-    return decorator
+    if func is None:
+        return rate_limit(RateLimitType.API)
+    else:
+        return rate_limit(RateLimitType.API)(func)
 
 
-def strict_rate_limit(redis_service: Optional[RedisService] = None):
+def strict_rate_limit(func: Callable = None):
     """Strict rate limit for sensitive endpoints."""
-    def decorator(func: Callable) -> Callable:
-        return rate_limit(RateLimitType.STRICT, redis_service)(func)
-    return decorator
+    if func is None:
+        return rate_limit(RateLimitType.STRICT)
+    else:
+        return rate_limit(RateLimitType.STRICT)(func)
 
 
-def upload_rate_limit(redis_service: Optional[RedisService] = None):
+def upload_rate_limit(func: Callable = None):
     """Rate limit for file upload endpoints."""
-    def decorator(func: Callable) -> Callable:
-        return rate_limit(RateLimitType.UPLOAD, redis_service)(func)
-    return decorator
+    if func is None:
+        return rate_limit(RateLimitType.UPLOAD)
+    else:
+        return rate_limit(RateLimitType.UPLOAD)(func)
+
+
+# НЕ экспортируем _RateLimitConfig чтобы он не попал в OpenAPI
+__all__ = [
+    'RateLimitType',
+    'RateLimitMiddleware',
+    'rate_limit',
+    'auth_rate_limit',
+    'api_rate_limit',
+    'strict_rate_limit',
+    'upload_rate_limit',
+    'create_rate_limit_config'
+]

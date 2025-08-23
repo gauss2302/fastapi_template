@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy import update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from uuid import UUID
 
@@ -61,10 +62,18 @@ class UserRepository:
         """Create a new user with GitHub OAuth data."""
         return await self.create(user_data)
 
-
     async def get_by_id(self, user_id: UUID) -> Optional[User]:
-        """Get a user by ID"""
+        """Get a user by ID - НЕ загружаем recruiter_profile автоматически"""
         result = await self.db.execute(select(User).where(User.id == user_id))
+        return result.scalar_one_or_none()
+
+    async def get_by_id_with_recruiter(self, user_id: UUID) -> Optional[User]:
+        """Get a user by ID WITH recruiter profile if exists"""
+        result = await self.db.execute(
+            select(User)
+            .options(selectinload(User.recruiter_profile))
+            .where(User.id == user_id)
+        )
         return result.scalar_one_or_none()
 
     async def get_by_email(self, email: str) -> Optional[User]:
@@ -83,7 +92,6 @@ class UserRepository:
         result = await self.db.execute(
             select(User).where(User.github_id == github_id)
         )
-
         return result.scalar_one_or_none()
 
     async def authenticate_user(self, email: str, password: str) -> Optional[User]:
@@ -198,7 +206,6 @@ class UserRepository:
         user.google_id = google_id
         user.updated_at = datetime.utcnow()
         return user
-
 
     async def link_github_account(self, user_id: UUID, github_id: str) -> User:
         user = await self.get_by_id(user_id)
