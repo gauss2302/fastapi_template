@@ -1,7 +1,9 @@
+import time
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
+from app.core.logger import AppLogger
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import GoogleOAuthService
 from app.services.github_auth_service import GitHubOAuthService
@@ -32,36 +34,116 @@ class UserService:
         self.github_oauth_service = github_oauth_service
         self.mobile_token_service = MobileTokenService(google_oauth_service.redis_service)
 
+        self.logger = AppLogger("user_service")
+
     async def register_user(self, user_data: UserRegister) -> User:
         """Register a new user with email and password."""
-        db_user = await self.user_repo.create_user_with_password(user_data)
-        return User.model_validate(db_user)
+        start_time = time.time()
+
+        try:
+            self.logger.info(
+                "User registration started",
+                email=user_data.email,
+                has_full_name=bool(user_data.full_name)
+            )
+
+            db_user = await self.user_repo.create_user_with_password(user_data)
+            user = User.model_validate(db_user)
+
+            duration = round(time.time() - start_time, 4)
+            self.logger.info(
+                "User registered successfully",
+                user_id=user.id,
+                email=user.email,
+                duration=duration
+            )
+
+            return user
+
+        except ConflictError as e:
+            self.logger.warning(
+                "User registration failed - conflict",
+                email=user_data.email,
+                error=str(e),
+                duration=round(time.time() - start_time, 4)
+            )
+            raise
+        except Exception as e:
+            self.logger.error(
+                "User registration failed - unexpected error",
+                email=user_data.email,
+                error=str(e),
+                duration=round(time.time() - start_time, 4)
+            )
+            raise
 
     async def authenticate_user(self, login_data: UserLogin) -> tuple[User, dict]:
         """Authenticate user with email and password."""
-        db_user = await self.user_repo.authenticate_user(
-            login_data.email, login_data.password
-        )
+        start_time = time.time()
 
-        if not db_user:
-            raise AuthenticationError("Invalid email or password")
+        try:
+            self.logger.info(
+                "User authentication started",
+                email=login_data.email
+            )
 
-        if not db_user.is_active:
-            raise AuthenticationError("User account is deactivated")
+            db_user = await self.user_repo.authenticate_user(
+                login_data.email, login_data.password
+            )
 
-        # Update last login
-        await self.user_repo.update_last_login(db_user.id)
+            if not db_user:
+                duration = round(time.time() - start_time, 4)
+                self.logger.warning(
+                    "Authentication failed - invalid credentials",
+                    email=login_data.email,
+                    duration=duration
+                )
+                raise AuthenticationError("Invalid email or password")
 
-        # Generate tokens
-        tokens = security_service.create_token_pair(db_user.id)
+            if not db_user.is_active:
+                duration = round(time.time() - start_time, 4)
+                self.logger.warning(
+                    "Authentication failed - user deactivated",
+                    email=login_data.email,
+                    user_id=db_user.id,
+                    duration=duration
+                )
+                raise AuthenticationError("User account is deactivated")
 
-        # Cache refresh token
-        await self.google_oauth_service.cache_refresh_token(
-            str(db_user.id), tokens["refresh_token"]
-        )
+            # Update last login
+            await self.user_repo.update_last_login(db_user.id)
 
-        user = User.model_validate(db_user)
-        return user, tokens
+            # Generate tokens
+            tokens = security_service.create_token_pair(db_user.id)
+
+            # Cache refresh token
+            await self.google_oauth_service.cache_refresh_token(
+                str(db_user.id), tokens["refresh_token"]
+            )
+
+            user = User.model_validate(db_user)
+            duration = round(time.time() - start_time, 4)
+
+            self.logger.info(
+                "User authenticated successfully",
+                user_id=user.id,
+                email=user.email,
+                duration=duration
+            )
+
+            return user, tokens
+
+        except AuthenticationError:
+            raise
+        except Exception as e:
+            duration = round(time.time() - start_time, 4)
+            self.logger.error(
+                "Authentication failed - unexpected error",
+                email=login_data.email,
+                error=str(e),
+                duration=duration
+            )
+            raise
 
     async def register_mobile_user(
             self,

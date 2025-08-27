@@ -1,9 +1,10 @@
 from typing import Optional
 from uuid import UUID
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logger import AppLogger
 from app.core.database import get_db
 from app.core.redis import get_redis, RedisService
 from app.core.security import security_service
@@ -126,7 +127,6 @@ def get_current_active_user(
     return current_user
 
 
-# Optional: If you need user-specific rate limiting in dependencies
 async def get_authenticated_user_id(
         current_user: User = Depends(get_current_user)
 ) -> UUID:
@@ -134,7 +134,6 @@ async def get_authenticated_user_id(
     return current_user.id
 
 
-# Company Deps - исправлено дублирование
 async def get_company_service(
         company_repo: CompanyRepository = Depends(get_company_repository),
         recruiter_repo: RecruiterRepository = Depends(get_recruiter_repository),
@@ -145,8 +144,8 @@ async def get_company_service(
 
 
 async def update_recruiter_activity(
-    current_user: User = Depends(get_current_user),
-    company_service: CompanyService = Depends(get_company_service),
+        current_user: User = Depends(get_current_user),
+        company_service: CompanyService = Depends(get_company_service),
 ) -> None:
     """Update recruiter activity for authenticated requests"""
     try:
@@ -155,3 +154,12 @@ async def update_recruiter_activity(
     except Exception:
         # Don't fail the request if activity update fails
         pass
+
+
+async def get_logger(request: Request = None) -> AppLogger:
+    context = {}
+
+    if request and hasattr(request.state, 'request_id'):
+        context['request_id'] = request.state.request_id
+
+    return AppLogger('api', **context)

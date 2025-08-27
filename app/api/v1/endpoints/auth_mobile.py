@@ -1,4 +1,3 @@
-# app/api/v1/endpoints/auth_mobile.py - Fixed version (key parts)
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from typing import Any, Optional
@@ -23,24 +22,11 @@ from app.core.dependencies import (
 )
 from app.core.exceptions import AuthenticationError, ConflictError
 from app.core.security import security_service
-
-# Import rate limiting decorators with fallback
-try:
-    from app.middleware.rate_limiter import auth_rate_limit, strict_rate_limit, rate_limit, RateLimitType
-except ImportError:
-    def auth_rate_limit(func):
-        return func
-
-
-    def strict_rate_limit(func):
-        return func
-
-
-    def rate_limit(limit_type):
-        def decorator(func):
-            return func
-
-        return decorator
+from app.middleware.rate_limiter import (
+    auth_rate_limit,
+    strict_rate_limit,
+    api_rate_limit,
+)
 
 router = APIRouter()
 
@@ -113,6 +99,7 @@ async def mobile_login(
 
 
 @router.post("/refresh")
+@api_rate_limit
 async def mobile_refresh_token(
         refresh_request: RefreshTokenRequest,
         request: Request,

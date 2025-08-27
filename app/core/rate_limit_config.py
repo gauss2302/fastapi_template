@@ -1,362 +1,320 @@
+from typing import Dict, Any, List, Optional
 from fastapi import Request
-from app.middleware.rate_limiter import RateLimitType, RateLimitConfig
-import hashlib
-from typing import Optional
+
+from app.core.redis import RedisService
+from app.middleware.rate_limiter import (
+    RateLimiter,
+    RateLimitType,
+    user_based_identifier,
+    ip_based_identifier,
+    device_based_identifier,
+    admin_bypass_condition,
+    premium_user_condition
+)
 
 
 # ============================================================================
-# CUSTOM KEY FUNCTIONS (separate from config classes)
+# PREDEFINED RATE LIMIT CONFIGURATIONS
 # ============================================================================
 
-def user_based_key(request: Request) -> str:
-    """Generate rate limit key based on authenticated user."""
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        # Hash token for user identification
-        return f"user:{hashlib.md5(token.encode()).hexdigest()[:16]}"
+class RateLimitPresets:
+    """Predefined rate limit configurations using limits format."""
 
-    # Fallback to IP for unauthenticated users
-    return f"ip:{request.client.host if request.client else 'unknown'}"
+    # Authentication limits
+    LOGIN = "5/minute;15/hour"
+    REGISTRATION = "3/hour;10/day"
+    PASSWORD_RESET = "3/30minutes;10/day"
+    OAUTH_CALLBACK = "10/minute;50/hour"
 
+    # API limits
+    GENERAL_API = "100/minute;1000/hour"
+    USER_PROFILE_UPDATE = "10/5minutes;50/hour"
+    SEARCH_QUERY = "200/minute;2000/hour"
 
-def ip_and_endpoint_key(request: Request) -> str:
-    """Generate key based on IP and specific endpoint."""
-    ip = request.client.host if request.client else "unknown"
-    endpoint = request.url.path.replace("/", "_")
-    return f"ip_endpoint:{ip}:{endpoint}"
+    # File operations
+    FILE_UPLOAD = "5/5minutes;20/hour"
+    BULK_OPERATION = "2/minute;10/hour"
 
+    # Security sensitive
+    ACCOUNT_DELETION = "1/day"
+    SENSITIVE_DATA_ACCESS = "5/hour"
+    ADMIN_ACTION = "50/minute;500/hour"
 
-def strict_ip_key(request: Request) -> str:
-    """Strict IP-based key for sensitive operations."""
-    # Check for real IP behind proxy
-    real_ip = (
-            request.headers.get("x-forwarded-for", "").split(",")[0].strip() or
-            request.headers.get("x-real-ip") or
-            (request.client.host if request.client else "unknown")
-    )
-    return f"strict_ip:{real_ip}"
+    # Public endpoints
+    HEALTH_CHECK = "1000/minute"
+    DOCUMENTATION = "100/minute"
+    PUBLIC_SEARCH = "50/minute;500/hour"
 
-
-def mobile_device_key(request: Request) -> str:
-    """Generate rate limit key based on mobile device ID or IP."""
-    device_id = request.headers.get("X-Device-ID")
-    user_agent = request.headers.get("User-Agent", "")
-
-    if device_id:
-        return f"mobile_device:{device_id}"
-
-    # Fallback: Use combination of IP and User-Agent hash for device identification
-    ip = request.client.host if request.client else "unknown"
-    ua_hash = hashlib.md5(user_agent.encode()).hexdigest()[:12]
-    return f"mobile_fallback:{ip}:{ua_hash}"
-
-
-def default_ip_key(request: Request) -> str:
-    """Default IP-based key."""
-    return f"ip:{request.client.host if request.client else 'unknown'}"
+    # Mobile specific
+    MOBILE_LOGIN = "10/15minutes;50/day"
+    MOBILE_REGISTRATION = "3/hour;5/day"
+    MOBILE_TOKEN_REFRESH = "100/hour"
 
 
 # ============================================================================
-# HELPER FUNCTIONS FOR SKIP CONDITIONS
+# CONFIGURATION HELPERS
 # ============================================================================
 
-def admin_bypass_check(request: Request) -> bool:
-    """Check for admin bypass header."""
-    return request.headers.get("x-admin-bypass") == "secret_key"
+def get_rate_limit_for_endpoint(endpoint_name: str) -> str:
+    """Get rate limit configuration for a specific endpoint."""
+    endpoint_limits = {
+        # Auth endpoints
+        "login": RateLimitPresets.LOGIN,
+        "mobile_login": RateLimitPresets.MOBILE_LOGIN,
+        "register": RateLimitPresets.REGISTRATION,
+        "mobile_register": RateLimitPresets.MOBILE_REGISTRATION,
+        "password_reset": RateLimitPresets.PASSWORD_RESET,
+        "oauth_callback": RateLimitPresets.OAUTH_CALLBACK,
 
+        # API endpoints
+        "user_profile_update": RateLimitPresets.USER_PROFILE_UPDATE,
+        "search": RateLimitPresets.SEARCH_QUERY,
+        "file_upload": RateLimitPresets.FILE_UPLOAD,
+        "bulk_operation": RateLimitPresets.BULK_OPERATION,
 
-def premium_user_check(request: Request) -> bool:
-    """Check for premium user header."""
-    return request.headers.get("x-premium-user") == "true"
+        # Security endpoints
+        "account_deletion": RateLimitPresets.ACCOUNT_DELETION,
+        "admin_action": RateLimitPresets.ADMIN_ACTION,
+        "sensitive_data": RateLimitPresets.SENSITIVE_DATA_ACCESS,
 
-
-# ============================================================================
-# RATE LIMIT CONFIGURATION FACTORY
-# ============================================================================
-
-class RateLimitConfigFactory:
-    """Factory class to create rate limit configurations without serialization issues."""
-
-    @staticmethod
-    def create_config(
-            calls: int,
-            period: int,
-            burst: Optional[int] = None,
-            key_func_name: str = "default_ip",
-            skip_condition: Optional[str] = None
-    ) -> RateLimitConfig:
-        """Create a rate limit configuration with proper function references."""
-
-        # Map function names to actual functions
-        key_func_map = {
-            "default_ip": default_ip_key,
-            "user_based": user_based_key,
-            "strict_ip": strict_ip_key,
-            "mobile_device": mobile_device_key,
-            "ip_and_endpoint": ip_and_endpoint_key,
-        }
-
-        skip_func_map = {
-            "admin_bypass": admin_bypass_check,
-            "premium_user": premium_user_check,
-        }
-
-        key_func = key_func_map.get(key_func_name, default_ip_key)
-        skip_func = skip_func_map.get(skip_condition) if skip_condition else None
-
-        return RateLimitConfig(
-            calls=calls,
-            period=period,
-            burst=burst,
-            key_func=key_func,
-            skip_if=skip_func
-        )
-
-
-# ============================================================================
-# PREDEFINED CONFIGURATIONS USING FACTORY
-# ============================================================================
-
-# Authentication-related configurations
-AUTH_CONFIGS = {
-    "login": RateLimitConfigFactory.create_config(
-        calls=5,
-        period=300,  # 5 attempts per 5 minutes
-        burst=2,
-        key_func_name="strict_ip"
-    ),
-
-    "registration": RateLimitConfigFactory.create_config(
-        calls=3,
-        period=3600,  # 3 registrations per hour
-        key_func_name="strict_ip"
-    ),
-
-    "password_reset": RateLimitConfigFactory.create_config(
-        calls=3,
-        period=1800,  # 3 password resets per 30 minutes
-        key_func_name="user_based"
-    ),
-
-    "oauth_callback": RateLimitConfigFactory.create_config(
-        calls=10,
-        period=60,  # 10 OAuth callbacks per minute
-        key_func_name="strict_ip"
-    ),
-}
-
-# Mobile-specific configurations
-MOBILE_CONFIGS = {
-    "mobile_registration": RateLimitConfigFactory.create_config(
-        calls=3,
-        period=3600,  # 3 registrations per hour per device
-        key_func_name="mobile_device"
-    ),
-
-    "mobile_login": RateLimitConfigFactory.create_config(
-        calls=10,
-        period=900,  # 10 login attempts per 15 minutes per device
-        burst=3,
-        key_func_name="mobile_device"
-    ),
-
-    "mobile_token_refresh": RateLimitConfigFactory.create_config(
-        calls=50,
-        period=3600,  # 50 refreshes per hour per device
-        key_func_name="mobile_device"
-    ),
-
-    "mobile_oauth": RateLimitConfigFactory.create_config(
-        calls=5,
-        period=600,  # 5 OAuth attempts per 10 minutes per device
-        key_func_name="mobile_device"
-    ),
-}
-
-# API operation configurations
-API_CONFIGS = {
-    "user_profile_update": RateLimitConfigFactory.create_config(
-        calls=10,
-        period=300,  # 10 updates per 5 minutes
-        key_func_name="user_based"
-    ),
-
-    "file_upload": RateLimitConfigFactory.create_config(
-        calls=5,
-        period=300,  # 5 uploads per 5 minutes
-        burst=2,
-        key_func_name="user_based"
-    ),
-
-    "search_query": RateLimitConfigFactory.create_config(
-        calls=100,
-        period=60,  # 100 searches per minute
-        key_func_name="user_based"
-    ),
-
-    "admin_action": RateLimitConfigFactory.create_config(
-        calls=20,
-        period=60,  # 20 admin actions per minute
-        key_func_name="user_based",
-        skip_condition="admin_bypass"
-    ),
-}
-
-# Security-sensitive configurations
-SECURITY_CONFIGS = {
-    "account_deletion": RateLimitConfigFactory.create_config(
-        calls=1,
-        period=86400,  # 1 account deletion per day
-        key_func_name="user_based"
-    ),
-
-    "sensitive_data_access": RateLimitConfigFactory.create_config(
-        calls=5,
-        period=3600,  # 5 accesses per hour
-        key_func_name="user_based"
-    ),
-
-    "admin_login": RateLimitConfigFactory.create_config(
-        calls=3,
-        period=1800,  # 3 admin login attempts per 30 minutes
-        key_func_name="strict_ip"
-    ),
-}
-
-# Public API configurations
-PUBLIC_CONFIGS = {
-    "health_check": RateLimitConfigFactory.create_config(
-        calls=1000,
-        period=60,  # 1000 health checks per minute
-        key_func_name="default_ip"
-    ),
-
-    "documentation": RateLimitConfigFactory.create_config(
-        calls=100,
-        period=60,  # 100 doc requests per minute
-        key_func_name="strict_ip"
-    ),
-}
-
-# Merge mobile configs into auth configs
-AUTH_CONFIGS.update(MOBILE_CONFIGS)
-
-
-# ============================================================================
-# CONVENIENCE FUNCTIONS
-# ============================================================================
-
-def get_rate_limit_config(config_name: str, category: str = "auth") -> RateLimitConfig:
-    """
-    Get a predefined rate limit configuration.
-
-    Args:
-        config_name: Name of the configuration
-        category: Category (auth, api, security, public)
-
-    Returns:
-        RateLimitConfig object
-
-    Example:
-        config = get_rate_limit_config("login", "auth")
-    """
-    categories = {
-        "auth": AUTH_CONFIGS,
-        "api": API_CONFIGS,
-        "security": SECURITY_CONFIGS,
-        "public": PUBLIC_CONFIGS,
+        # Public endpoints
+        "health": RateLimitPresets.HEALTH_CHECK,
+        "docs": RateLimitPresets.DOCUMENTATION,
+        "public_search": RateLimitPresets.PUBLIC_SEARCH,
     }
 
-    category_configs = categories.get(category, {})
-    if config_name not in category_configs:
-        raise ValueError(f"Configuration '{config_name}' not found in category '{category}'")
+    return endpoint_limits.get(endpoint_name, RateLimitPresets.GENERAL_API)
 
-    return category_configs[config_name]
+
+def create_custom_rate_limit(
+        calls_per_minute: int = None,
+        calls_per_hour: int = None,
+        calls_per_day: int = None,
+        burst_calls: int = None,
+        burst_period: str = "10seconds"
+) -> str:
+    """
+    Create a custom rate limit string.
+
+    Args:
+        calls_per_minute: Number of calls allowed per minute
+        calls_per_hour: Number of calls allowed per hour  
+        calls_per_day: Number of calls allowed per day
+        burst_calls: Number of burst calls allowed
+        burst_period: Time period for burst (e.g., "10seconds", "1minute")
+
+    Returns:
+        Rate limit string in limits format
+
+    Example:
+        create_custom_rate_limit(calls_per_minute=10, calls_per_hour=100, burst_calls=5)
+        # Returns: "5/10seconds;10/minute;100/hour"
+    """
+    limits = []
+
+    # Add burst limit first (most restrictive)
+    if burst_calls and burst_period:
+        limits.append(f"{burst_calls}/{burst_period}")
+
+    # Add time-based limits
+    if calls_per_minute:
+        limits.append(f"{calls_per_minute}/minute")
+    if calls_per_hour:
+        limits.append(f"{calls_per_hour}/hour")
+    if calls_per_day:
+        limits.append(f"{calls_per_day}/day")
+
+    if not limits:
+        # Default fallback
+        limits.append("100/minute")
+
+    return ";".join(limits)
 
 
 # ============================================================================
-# MONITORING HELPERS
+# MONITORING AND MANAGEMENT
 # ============================================================================
 
 class RateLimitMonitor:
-    """Helper class for monitoring rate limit usage."""
+    """Monitor and manage rate limits."""
 
-    @staticmethod
-    async def get_current_usage(redis_service, key: str) -> dict:
-        """Get current usage for a rate limit key."""
-        count = await redis_service.get(key)
-        ttl = await redis_service.redis.ttl(key) if redis_service.redis else 0
+    def __init__(self, redis_service: RedisService):
+        self.redis_service = redis_service
+        self.rate_limiter = RateLimiter(redis_service)
+
+    async def get_user_rate_limit_status(
+            self,
+            request: Request,
+            limit_type: RateLimitType = RateLimitType.API
+    ) -> Dict[str, Any]:
+        """Get current rate limit status for a user."""
+        key = self.rate_limiter._get_client_key(request)
+        limit_str = self.rate_limiter.LIMITS.get(limit_type, "100/minute")
+
+        # Parse first limit for status
+        from limits import parse
+        rate_limit = parse(limit_str.split(";")[0])
+
+        # Get window stats
+        window_stats = self.rate_limiter.limiter.get_window_stats(rate_limit, key)
 
         return {
-            "current_count": int(count) if count else 0,
-            "ttl_seconds": ttl,
-            "key": key
+            "limit": rate_limit.amount,
+            "remaining": max(0, rate_limit.amount - window_stats.hit_count),
+            "reset_time": window_stats.reset_time,
+            "current_usage": window_stats.hit_count
         }
 
-    @staticmethod
-    async def reset_rate_limit(redis_service, key: str) -> bool:
+    async def reset_rate_limit_for_key(self, key: str) -> bool:
         """Reset rate limit for a specific key."""
-        return await redis_service.delete(key)
-
-    @staticmethod
-    async def get_all_rate_limits(redis_service, pattern: str = "rate_limit:*") -> list:
-        """Get all current rate limit keys and their usage."""
-        if not redis_service.redis:
-            return []
-
         try:
-            keys = await redis_service.redis.keys(pattern)
-            results = []
-
-            for key in keys:
-                usage = await RateLimitMonitor.get_current_usage(redis_service, key)
-                results.append(usage)
-
-            return results
+            # Clear from storage
+            await self.rate_limiter.storage.clear(key)
+            return True
         except Exception:
-            return []
+            return False
+
+    async def get_top_rate_limited_ips(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get top rate-limited IP addresses."""
+        # This would require custom implementation based on storage type
+        # For now, return empty list
+        return []
+
+    async def block_ip_temporarily(self, ip: str, duration_minutes: int = 60) -> bool:
+        """Temporarily block an IP address."""
+        block_key = f"blocked_ip:{ip}"
+
+        # Store block information
+        await self.redis_service.set(
+            block_key,
+            {"blocked_at": "now", "duration": duration_minutes},
+            expire=duration_minutes * 60
+        )
+        return True
+
+    async def unblock_ip(self, ip: str) -> bool:
+        """Remove IP from block list."""
+        block_key = f"blocked_ip:{ip}"
+        return await self.redis_service.delete(block_key)
+
+    async def is_ip_blocked(self, ip: str) -> bool:
+        """Check if IP is currently blocked."""
+        block_key = f"blocked_ip:{ip}"
+        return await self.redis_service.exists(block_key)
 
 
 # ============================================================================
-# EMERGENCY CONTROLS
+# ADVANCED CONFIGURATION PATTERNS
 # ============================================================================
 
-class EmergencyRateLimitControls:
-    """Emergency controls for rate limiting."""
+def create_tiered_rate_limit(
+        basic_limit: str,
+        premium_multiplier: float = 2.0,
+        admin_multiplier: float = 10.0
+) -> Dict[str, str]:
+    """
+    Create tiered rate limits for different user types.
 
-    @staticmethod
-    async def enable_emergency_mode(redis_service, duration: int = 3600):
-        """Enable emergency rate limiting (very strict limits)."""
-        emergency_key = "emergency_mode:enabled"
-        await redis_service.set(emergency_key, "true", expire=duration)
+    Args:
+        basic_limit: Base rate limit string
+        premium_multiplier: Multiplier for premium users
+        admin_multiplier: Multiplier for admin users
 
-    @staticmethod
-    async def disable_emergency_mode(redis_service):
-        """Disable emergency rate limiting."""
-        emergency_key = "emergency_mode:enabled"
-        await redis_service.delete(emergency_key)
+    Returns:
+        Dictionary with limits for each tier
+    """
+    from limits import parse
 
-    @staticmethod
-    async def is_emergency_mode(redis_service) -> bool:
-        """Check if emergency mode is enabled."""
-        emergency_key = "emergency_mode:enabled"
-        return await redis_service.exists(emergency_key)
+    # Parse the basic limit
+    limits = [parse(limit) for limit in basic_limit.split(";")]
 
-    @staticmethod
-    async def block_ip(redis_service, ip: str, duration: int = 3600):
-        """Block specific IP address."""
-        block_key = f"blocked_ip:{ip}"
-        await redis_service.set(block_key, "true", expire=duration)
+    # Create tiered limits
+    tiers = {}
 
-    @staticmethod
-    async def unblock_ip(redis_service, ip: str):
-        """Unblock specific IP address."""
-        block_key = f"blocked_ip:{ip}"
-        await redis_service.delete(block_key)
+    # Basic tier
+    tiers["basic"] = basic_limit
 
-    @staticmethod
-    async def is_ip_blocked(redis_service, ip: str) -> bool:
-        """Check if IP is blocked."""
-        block_key = f"blocked_ip:{ip}"
-        return await redis_service.exists(block_key)
+    # Premium tier
+    premium_limits = []
+    for limit in limits:
+        new_amount = int(limit.amount * premium_multiplier)
+        premium_limits.append(f"{new_amount}/{limit.per}")
+    tiers["premium"] = ";".join(premium_limits)
+
+    # Admin tier  
+    admin_limits = []
+    for limit in limits:
+        new_amount = int(limit.amount * admin_multiplier)
+        admin_limits.append(f"{new_amount}/{limit.per}")
+    tiers["admin"] = ";".join(admin_limits)
+
+    return tiers
+
+
+def create_api_endpoint_limits() -> Dict[str, str]:
+    """Create rate limits optimized for different API endpoints."""
+    return {
+        # High-frequency endpoints
+        "health_check": "1000/minute",
+        "metrics": "500/minute",
+        "status": "200/minute",
+
+        # Read operations
+        "get_user": "200/minute;2000/hour",
+        "list_items": "100/minute;1000/hour",
+        "search": "50/minute;500/hour",
+
+        # Write operations
+        "create_item": "20/minute;200/hour",
+        "update_item": "30/minute;300/hour",
+        "delete_item": "10/minute;100/hour",
+
+        # Expensive operations
+        "bulk_import": "2/minute;10/hour",
+        "generate_report": "5/minute;20/hour",
+        "data_export": "3/minute;15/hour",
+
+        # Authentication
+        "login": "10/minute;50/hour",
+        "logout": "20/minute",
+        "refresh_token": "30/minute;200/hour",
+
+        # Password operations
+        "change_password": "5/minute;20/hour",
+        "reset_password": "3/minute;10/hour",
+        "forgot_password": "3/minute;5/hour",
+    }
+
+
+# ============================================================================
+# USAGE EXAMPLES AND UTILITIES
+# ============================================================================
+
+def get_identifier_for_user_type(user_type: str):
+    """Get appropriate identifier function for user type."""
+    identifier_map = {
+        "authenticated": user_based_identifier,
+        "anonymous": ip_based_identifier,
+        "mobile": device_based_identifier,
+        "api": user_based_identifier,
+    }
+    return identifier_map.get(user_type, ip_based_identifier)
+
+
+def get_skip_condition_for_user_type(user_type: str):
+    """Get appropriate skip condition for user type."""
+    skip_map = {
+        "admin": admin_bypass_condition,
+        "premium": premium_user_condition,
+    }
+    return skip_map.get(user_type)
+
+
+# Export commonly used configurations
+COMMON_LIMITS = {
+    "auth": RateLimitPresets.LOGIN,
+    "api": RateLimitPresets.GENERAL_API,
+    "upload": RateLimitPresets.FILE_UPLOAD,
+    "search": RateLimitPresets.SEARCH_QUERY,
+    "admin": RateLimitPresets.ADMIN_ACTION,
+}

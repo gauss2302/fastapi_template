@@ -1,12 +1,10 @@
 from typing import Optional, List, Tuple, Dict, Any
 from uuid import UUID
-from datetime import datetime
 
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.recruiter_repository import RecruiterRepository
 from app.repositories.user_repository import UserRepository
 
-# Updated imports to use separate schemas
 from app.schemas.company import (
     Company, CompanyCreate, CompanyUpdate, CompanyVerification, CompanyStats,
     CompanySearchFilters, CompanyRegistrationRequest
@@ -15,10 +13,10 @@ from app.schemas.recruiter import (
     Recruiter, RecruiterCreate, RecruiterUpdate, RecruiterApproval, RecruiterPermissions,
     RecruiterInvitationRequest
 )
-from app.schemas.user import User
 from app.models.company import CompanyStatus
 from app.models.recruiter import RecruiterStatus
-from app.core.exceptions import NotFoundError, AuthenticationError, ConflictError, AuthorizationError
+from app.core.exceptions import NotFoundError, ConflictError, AuthorizationError
+
 
 class CompanyService:
     def __init__(

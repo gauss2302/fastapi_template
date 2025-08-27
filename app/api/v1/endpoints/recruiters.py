@@ -7,8 +7,7 @@ from uuid import UUID
 from app.middleware.rate_limiter import rate_limit, strict_rate_limit
 from app.schemas.recruiter import (
     Recruiter, RecruiterCreate, RecruiterUpdate, RecruiterApproval,
-    RecruiterPermissions, RecruiterInvitationRequest, RecruiterFull,
-    RecruiterListResponse, RecruiterInvitationResponse
+    RecruiterPermissions, RecruiterInvitationRequest,
 )
 from app.schemas.user import User
 from app.models.recruiter import RecruiterStatus

@@ -39,17 +39,24 @@ class Settings(BaseSettings):
         if isinstance(v, str) and v:
             return v
 
-        # Get values from info.data (Pydantic v2 way)
-        values = info.data if hasattr(info, 'data') else {}
+        # ИСПРАВЛЕНО: правильный доступ к данным в Pydantic v2
+        values = info.data
+
+        server = values.get('POSTGRES_SERVER', 'localhost')
+        user = values.get('POSTGRES_USER', 'postgres')
+        password = values.get('POSTGRES_PASSWORD', 'postgres')
+        port = values.get('POSTGRES_PORT', 5432)
+        db = values.get('POSTGRES_DB', 'fastapi_db')
 
         return (
             f"postgresql+asyncpg://"
-            f"{values.get('POSTGRES_USER', 'postgres')}:"
-            f"{values.get('POSTGRES_PASSWORD', 'postgres')}@"
-            f"{values.get('POSTGRES_SERVER', 'localhost')}:"
-            f"{values.get('POSTGRES_PORT', 5432)}/"
-            f"{values.get('POSTGRES_DB', 'postgres')}"
+            f"{user}:{password}@{server}:{port}/{db}"
         )
+
+    @property
+    def DATABASE_URL_SYNC(self) -> str:
+        """Синхронная версия DATABASE_URL для Alembic"""
+        return self.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
     # Redis settings
     REDIS_URL: str = Field(default="redis://localhost:6379/0")

@@ -8,38 +8,22 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.logger import config_structlog, AppLogger
 from app.core.config import settings
 from app.core.redis import redis_service
 from app.core.exceptions import BaseAPIException
 from app.api.v1.api import api_router
+from app.middleware.rate_limiter import RateLimitMiddleware
+from app.middleware.request_logging import RequestLoggingMiddleware
 
-# Configure structured logging
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
-    ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
-
-logger = structlog.get_logger()
-
+config_structlog()
+logger = AppLogger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
-    logger.info("Starting application", app_name=settings.APP_NAME)
+    logger.info("Starting application", app_name=settings.APP_NAME, version=settings.APP_VERSION)
 
     try:
         # Initialize Redis
@@ -67,6 +51,9 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_STR}/redoc",
     lifespan=lifespan,
 )
+
+app.add_middleware(RateLimitMiddleware, redis_service=redis_service)
+app.add_middleware(RequestLoggingMiddleware)
 
 # Security middleware
 app.add_middleware(

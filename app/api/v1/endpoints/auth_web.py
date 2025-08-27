@@ -3,17 +3,15 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from typing import Any
 
-from app.core.redis import RedisService, get_redis
 from app.schemas.user import (
     GoogleTokenRequest,
     GoogleAccountLinkRequest,
     UserRegister,
     UserLogin,
     UserPasswordUpdate,
-    User, GitHubAccountLinkRequest,
+    User,
 )
 from app.services.github_auth_service import GitHubOAuthService
-from app.schemas.user import GitHubTokenRequest
 from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
 from app.core.dependencies import (
@@ -24,15 +22,10 @@ from app.core.dependencies import (
 )
 from app.core.exceptions import AuthenticationError, ConflictError
 
-# Import rate limiting decorators with fallback
-try:
-    from app.middleware.rate_limiter import auth_rate_limit, strict_rate_limit, rate_limit
-except ImportError:
-    def auth_rate_limit(func):
-        return func
-    def strict_rate_limit(func):
-        return func
-
+from app.middleware.rate_limiter import (
+    auth_rate_limit,
+    strict_rate_limit,
+)
 router = APIRouter()
 
 
