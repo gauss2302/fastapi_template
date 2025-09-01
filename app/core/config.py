@@ -39,7 +39,6 @@ class Settings(BaseSettings):
         if isinstance(v, str) and v:
             return v
 
-        # ИСПРАВЛЕНО: правильный доступ к данным в Pydantic v2
         values = info.data
 
         server = values.get('POSTGRES_SERVER', 'localhost')

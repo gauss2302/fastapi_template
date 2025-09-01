@@ -3,7 +3,6 @@ from uuid import UUID
 from datetime import datetime
 
 from app.core.redis import RedisService
-from app.core.exceptions import AuthenticationError
 
 
 class WebAuthService:
