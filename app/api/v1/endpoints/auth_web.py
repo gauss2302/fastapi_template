@@ -1,4 +1,3 @@
-# app/api/v1/endpoints/auth_web.py - Fixed version
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from typing import Any
