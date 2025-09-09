@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr, validator, HttpUrl
+from pydantic import BaseModel, Field, EmailStr, field_validator, HttpUrl
 from typing import Optional, List
 from datetime import datetime
 import uuid
@@ -76,7 +76,7 @@ class JobPostingBase(BaseModel):
     contact_email: EmailStr = Field(..., description="Contact email for applications")
     apply_url: Optional[HttpUrl] = Field(None, description="External application URL")
 
-    @validator('salary_max')
+    @field_validator('salary_max')
     def validate_salary_range(cls, v, values):
         if v and 'salary_min' in values and values['salary_min']:
             if v < values['salary_min']:
@@ -86,7 +86,7 @@ class JobPostingBase(BaseModel):
                 raise ValueError('salary_max cannot be more than 5x salary_min')
         return v
 
-    @validator('requirements')
+    @field_validator('requirements')
     def validate_requirements(cls, v):
         if not v:
             raise ValueError('Requirements cannot be empty')
@@ -103,7 +103,7 @@ class JobPostingBase(BaseModel):
 
         return v
 
-    @validator('skills')
+    @field_validator('skills')
     def validate_skills(cls, v):
         if v:
             for skill in v:
@@ -118,7 +118,7 @@ class JobPostingBase(BaseModel):
 
         return v
 
-    @validator('location_restrictions')
+    @field_validator('location_restrictions')
     def validate_location_restrictions(cls, v):
         if v:
             for location in v:
@@ -128,7 +128,7 @@ class JobPostingBase(BaseModel):
                     raise ValueError('Each location must be ≤ 100 characters')
         return v
 
-    @validator('title')
+    @field_validator('title')
     def validate_title(cls, v):
         if not v.strip():
             raise ValueError('Title cannot be empty or whitespace only')
@@ -200,7 +200,7 @@ class JobPostingUpdate(BaseModel):
     apply_url: Optional[HttpUrl] = None
 
     # Same validators as create but for optional fields
-    @validator('salary_max')
+    @field_validator('salary_max')
     def validate_salary_range(cls, v, values):
         if v and 'salary_min' in values and values['salary_min']:
             if v < values['salary_min']:
@@ -296,7 +296,7 @@ class JobSearchRequest(BaseModel):
     )
     sort_order: str = Field(default="desc", regex="^(asc|desc)$", description="Sort direction")
 
-    @validator('posted_before')
+    @field_validator('posted_before')
     def validate_date_range(cls, v, values):
         if v and 'posted_after' in values and values['posted_after']:
             if v <= values['posted_after']:
@@ -351,7 +351,7 @@ class JobPostingPublish(BaseModel):
     publish_immediately: bool = Field(default=True, description="Publish job immediately")
     scheduled_date: Optional[datetime] = Field(None, description="Schedule publication for later")
 
-    @validator('scheduled_date')
+    @field_validator('scheduled_date')
     def validate_scheduled_date(cls, v, values):
         if not values.get('publish_immediately') and not v:
             raise ValueError('scheduled_date is required when publish_immediately is False')

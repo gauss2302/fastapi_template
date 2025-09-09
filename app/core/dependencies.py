@@ -9,9 +9,11 @@ from app.core.database import get_db
 from app.core.redis import get_redis, RedisService
 from app.core.security import security_service
 from app.repositories.company_repository import CompanyRepository
+from app.repositories.job_repository import JobRepository
 from app.repositories.recruiter_repository import RecruiterRepository
 from app.repositories.user_repository import UserRepository
 from app.services.company_service import CompanyService
+from app.services.job_service import JobService
 from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
 from app.services.github_auth_service import GitHubOAuthService
@@ -163,3 +165,16 @@ async def get_logger(request: Request = None) -> AppLogger:
         context['request_id'] = request.state.request_id
 
     return AppLogger('api', **context)
+
+
+# Jobs Related Dependencies
+async def get_job_repository(db: AsyncSession = Depends(get_db)) -> JobRepository:
+    """Get job repository dependency."""
+    return JobRepository(db)
+
+
+async def get_job_service(
+    job_repo: JobRepository = Depends(get_job_repository),
+    company_repo: CompanyRepository = Depends(get_company_repository),
+    recruiter_repo: RecruiterRepository = Depends(get_recruiter_repository)) -> JobService:
+    return JobService(job_repo, company_repo, recruiter_repo)
