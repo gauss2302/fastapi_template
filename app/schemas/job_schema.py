@@ -291,10 +291,10 @@ class JobSearchRequest(BaseModel):
     # Sorting
     sort_by: str = Field(
         default="posted_at",
-        regex="^(posted_at|created_at|salary_min|title|views_count|applications_count)$",
+        pattern="^(posted_at|created_at|salary_min|title|views_count|applications_count)$",
         description="Sort field"
     )
-    sort_order: str = Field(default="desc", regex="^(asc|desc)$", description="Sort direction")
+    sort_order: str = Field(default="desc", pattern="^(asc|desc)$", description="Sort direction")
 
     @field_validator('posted_before')
     def validate_date_range(cls, v, values):
@@ -398,7 +398,7 @@ class JobValidationResponse(BaseModel):
 class BulkJobOperation(BaseModel):
     """Массовые операции над вакансиями"""
     job_ids: List[uuid.UUID] = Field(..., min_items=1, max_items=50, description="Job IDs to operate on")
-    operation: str = Field(..., regex="^(delete|publish|pause|activate|archive)$", description="Operation to perform")
+    operation: str = Field(..., pattern="^(delete|publish|pause|activate|archive)$", description="Operation to perform")
     reason: Optional[str] = Field(None, max_length=500, description="Reason for bulk operation")
 
 
