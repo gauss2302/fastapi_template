@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging.logger import AppLogger
 from app.core.database.database import get_db
 from app.core.redis.redis import get_redis, RedisService
+from app.repositories.application_repository import ApplicationRepository
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.job_repository import JobRepository
 from app.repositories.recruiter_repository import RecruiterRepository
 from app.repositories.user_repository import UserRepository
+from app.services.application_service import ApplicationService
 from app.services.company_service import CompanyService
 from app.services.job_service import JobService
 from app.services.user_service import UserService
@@ -186,3 +188,15 @@ async def get_job_service(
     company_repo: CompanyRepository = Depends(get_company_repository),
     recruiter_repo: RecruiterRepository = Depends(get_recruiter_repository)) -> JobService:
     return JobService(job_repo, company_repo, recruiter_repo)
+
+
+# Application Related Dependencies
+async def get_applicaiton_repository(db: AsyncSession = Depends(get_db)) -> ApplicationRepository:
+    return ApplicationRepository(db)
+
+async def get_application_service(
+        application_repository: ApplicationRepository = Depends(get_applicaiton_repository),
+        company_repository: CompanyRepository = Depends(get_company_repository),
+        recruiter_repo: RecruiterRepository = Depends(get_recruiter_repository)
+) -> ApplicationService:
+    return ApplicationService(application_repository, company_repository, recruiter_repo)
