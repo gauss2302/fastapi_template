@@ -3,10 +3,10 @@ import httpx
 import requests
 from google.oauth2 import id_token
 
-from app.core.config import settings
-from app.core.redis import RedisService
+from app.core.config.config import settings
+from app.core.redis.redis import RedisService
 from google_auth_oauthlib.flow import Flow
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions.exceptions import AuthenticationError
 from app.schemas.user import GoogleUserInfo
 
 

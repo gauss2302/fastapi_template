@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from typing import Optional, List, Tuple, Dict, Any
 from uuid import UUID
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions.exceptions import ConflictError, NotFoundError
 from app.models.company import Company, CompanyStatus
 from app.models.recruiter import Recruiter, RecruiterStatus
 from app.schemas.recruiter import (

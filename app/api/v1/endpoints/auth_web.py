@@ -13,15 +13,15 @@ from app.schemas.user import (
 from app.services.github_auth_service import GitHubOAuthService
 from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
-from app.core.dependencies import (
+from app.core.deps.dependencies import (
     get_user_service,
     get_google_oauth_service,
     get_current_user,
     get_github_oauth_service
 )
-from app.core.exceptions import AuthenticationError, ConflictError
+from app.core.exceptions.exceptions import AuthenticationError, ConflictError
 
-from app.middleware.rate_limiter import (
+from app.middleware.rate_limiter.rate_limiter import (
     auth_rate_limit,
     strict_rate_limit,
 )

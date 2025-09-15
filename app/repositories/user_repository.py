@@ -6,8 +6,8 @@ from sqlalchemy.orm import selectinload
 from typing import Optional
 from uuid import UUID
 
-from app.core.exceptions import ConflictError, NotFoundError
-from app.core.security import security_service
+from app.core.exceptions.exceptions import ConflictError, NotFoundError
+from app.core.security.security import security_service
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate, UserRegister
 

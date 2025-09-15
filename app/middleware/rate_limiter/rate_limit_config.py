@@ -1,8 +1,8 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from fastapi import Request
 
-from app.core.redis import RedisService
-from app.middleware.rate_limiter import (
+from app.core.redis.redis import RedisService
+from app.middleware.rate_limiter.rate_limiter import (
     RateLimiter,
     RateLimitType,
     user_based_identifier,

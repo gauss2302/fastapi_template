@@ -4,10 +4,9 @@ from datetime import datetime, timedelta
 import secrets
 import hashlib
 
-from app.core.redis import RedisService
-from app.core.security import security_service
-from app.core.exceptions import AuthenticationError
-from app.schemas.user import User, DeviceInfo
+from app.core.redis.redis import RedisService
+from app.core.security.security import security_service
+from app.core.exceptions.exceptions import AuthenticationError
 
 
 class MobileTokenService:

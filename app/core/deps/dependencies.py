@@ -1,13 +1,11 @@
-from typing import Optional
 from uuid import UUID
 from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logger import AppLogger
-from app.core.database import get_db
-from app.core.redis import get_redis, RedisService
-from app.core.security import security_service
+from app.core.logging.logger import AppLogger
+from app.core.database.database import get_db
+from app.core.redis.redis import get_redis, RedisService
 from app.repositories.company_repository import CompanyRepository
 from app.repositories.job_repository import JobRepository
 from app.repositories.recruiter_repository import RecruiterRepository
@@ -18,7 +16,6 @@ from app.services.user_service import UserService
 from app.services.auth_service import GoogleOAuthService
 from app.services.github_auth_service import GitHubOAuthService
 from app.schemas.user import User
-from app.core.exceptions import AuthenticationError
 
 # Security scheme
 security = HTTPBearer()

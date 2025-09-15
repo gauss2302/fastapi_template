@@ -5,10 +5,9 @@ from typing import Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
-from app.core.redis import RedisService
-from app.core.security import security_service
-from app.core.exceptions import AuthenticationError
-from app.schemas.user import User, DeviceInfo
+from app.core.redis.redis import RedisService
+from app.core.security.security import security_service
+from app.schemas.user import DeviceInfo
 
 
 class MobileAuthService:

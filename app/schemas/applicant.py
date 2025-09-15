@@ -49,7 +49,7 @@ class ApplicantCreate(ApplicantBase):
     pass
 
 
-class ApplicantUpdate(BaseModel):
+class ApplicantUpdate(ApplicantBase):
     """Обновление профиля соискателя"""
     professional_title: Optional[str] = Field(None, max_length=200)
     years_of_experience: Optional[str] = Field(None, max_length=50)

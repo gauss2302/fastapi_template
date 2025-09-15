@@ -1,7 +1,7 @@
 import json
 from typing import Any, Optional
 import redis.asyncio as aioredis
-from app.core.config import settings
+from app.core.config.config import settings
 
 
 class RedisService:

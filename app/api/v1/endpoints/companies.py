@@ -4,15 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from typing import List, Optional
 from uuid import UUID
 
-from app.middleware.rate_limiter import rate_limit, strict_rate_limit
+from app.middleware.rate_limiter.rate_limiter import rate_limit, strict_rate_limit
 from app.schemas.company import (
-    Company, CompanyCreate, CompanyUpdate, CompanyVerification, CompanyStats,
+    Company, CompanyUpdate, CompanyVerification, CompanyStats,
     CompanyRegistrationRequest, CompanySearchFilters, CompanyPublic
 )
 from app.schemas.user import User
 from app.models.company import CompanyStatus
 from app.services.company_service import CompanyService
-from app.core.dependencies import (
+from app.core.deps.dependencies import (
     get_current_user,
     get_current_superuser,
     get_company_service,

@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 from uuid import UUID
 from typing import Optional, Dict, Any
 
-from app.core.config import settings
-from app.core.exceptions import AuthenticationError
-from app.core.redis import RedisService
-from app.core.security import security_service
+from app.core.config.config import settings
+from app.core.exceptions.exceptions import AuthenticationError
+from app.core.redis.redis import RedisService
+from app.core.security.security import security_service
 
 
 class TokenService:

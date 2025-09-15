@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import UUID
 from datetime import datetime
 
-from app.core.config import settings
+from app.core.config.config import settings
 
 
 def config_structlog():

@@ -1,17 +1,17 @@
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, JSON
+from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey, Enum as SQLEnum, Boolean
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, mapped_column, Mapped
 from sqlalchemy.sql import func
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
 import uuid
 import enum
-from typing import Dict, List, Optional
+import re
 
-from app.core.database import Base
+from app.core.database.database import Base
 
 
-
-class JobLevel(enum.Enum):
+class JobLevel(str, enum.Enum):
     INTERN = "intern"
     ENTRY = "entry"
     MID = "mid"
@@ -21,7 +21,7 @@ class JobLevel(enum.Enum):
     EXECUTIVE = "executive"
 
 
-class JobType(enum.Enum):
+class JobType(str, enum.Enum):
     FULL_TIME = "full_time"
     PART_TIME = "part_time"
     CONTRACT = "contract"
@@ -29,20 +29,25 @@ class JobType(enum.Enum):
     TEMPORARY = "temporary"
 
 
-class WorkingType(enum.Enum):
+class WorkingType(str, enum.Enum):
     ONSITE = "onsite"
     REMOTE = "remote"
     HYBRID = "hybrid"
 
 
-class SalaryPeriod(enum.Enum):
-    YEARLY = "yearly"
-    MONTHLY = "monthly"
-    WEEKLY = "weekly"
-    HOURLY = "hourly"
+class JobStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+    FLAGGED = "flagged"
+    BLACKLISTED = "blacklisted"
 
 
-class EducationLevel(enum.Enum):
+class EducationLevel(str, enum.Enum):
     NONE = "none"
     HIGH_SCHOOL = "high_school"
     BACHELOR = "bachelor"
@@ -50,280 +55,674 @@ class EducationLevel(enum.Enum):
     PHD = "phd"
 
 
-class JobStatus(enum.Enum):
-    DRAFT = "draft"  # Черновик
-    PENDING_REVIEW = "pending"  # Ожидает модерации
-    ACTIVE = "active"  # Активная
-    PAUSED = "paused"  # Приостановлена
-    FILLED = "filled"  # Закрыта (нанят кандидат)
-    CANCELLED = "cancelled"  # Отменена
-    FLAGGED = "flagged"  # Подозрение на ghost job
-    BLACKLISTED = "blacklisted"  # Заблокирована модератором
-
-
-class VerificationLevel(enum.Enum):
-    NONE = "none"  # Без верификации
-    BASIC = "basic"  # Email verification
-    STANDARD = "standard"  # Company + contact verification
-    PREMIUM = "premium"  # Full verification + manual review
-
-
 class Job(Base):
     __tablename__ = 'job_postings'
 
     # Primary fields
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True
+    )
 
     # Basic Job Information
-    title = Column(String(200), nullable=False)
-    description = Column(Text, nullable=False)
-    company_id = Column(UUID(as_uuid=True), nullable=False)
-    company_name = Column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+        index=True
+    )
+    description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False
+    )
+
+    # Company relationship
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id"),
+        nullable=False,
+        index=True
+    )
+    company_name: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+        index=True
+    )  # Denormalized for performance
+
+    # Creator relationship
+    created_by_recruiter_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recruiters.id"),
+        nullable=True,
+        index=True
+    )
 
     # Job Details
-    department = Column(String(100))
-    level = Column(String(20), nullable=False)  # JobLevel enum values
-    type = Column(String(20), nullable=False)  # JobType enum values
-    location = Column(String(200))
+    department: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True
+    )
+    level: Mapped[JobLevel] = mapped_column(
+        SQLEnum(JobLevel),
+        nullable=False,
+        index=True
+    )
+    type: Mapped[JobType] = mapped_column(
+        SQLEnum(JobType),
+        nullable=False,
+        index=True
+    )
+    working_type: Mapped[WorkingType] = mapped_column(
+        SQLEnum(WorkingType),
+        nullable=False,
+        index=True
+    )
 
-    # Application
-    applications = relationship("Application", back_populates="job")
-
-    # Location coordinates
-    latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)
-    city = Column(String(100))
-    state = Column(String(100))
-    country = Column(String(100))
-    timezone = Column(String(50))
+    # Location information
+    location: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        nullable=True,
+        index=True
+    )
+    latitude: Mapped[Optional[float]] = mapped_column(
+        Float,
+        nullable=True
+    )
+    longitude: Mapped[Optional[float]] = mapped_column(
+        Float,
+        nullable=True
+    )
+    city: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True
+    )
+    state: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True
+    )
+    country: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True
+    )
+    timezone: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True
+    )
+    is_remote_allowed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        index=True
+    )
 
     # Compensation
-    salary_min = Column(Integer, nullable=True)
-    salary_max = Column(Integer, nullable=True)
-    salary_currency = Column(String(3), default='USD')  # ISO currency codes
-    equity = Column(String(100))
-    benefits = Column(JSON)  # Stored as JSON array
+    salary_min: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True
+    )
+    salary_max: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True
+    )
+    salary_currency: Mapped[str] = mapped_column(
+        String(3),
+        default='USD',
+        nullable=False,
+        index=True
+    )
+    salary_period: Mapped[str] = mapped_column(
+        String(20),
+        default='yearly',
+        nullable=False
+    )  # yearly, monthly, hourly
+    equity: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True
+    )
+    benefits: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True
+    )
 
-    # Requirements
-    requirements = Column(JSON, nullable=False)  # JSON array
-    preferred_skills = Column(JSON)  # JSON array
-    experience_years = Column(Integer, nullable=True)
-    education_level = Column(String(20), nullable=False)  # EducationLevel enum values
+    # Requirements and Skills
+    requirements: Mapped[List[str]] = mapped_column(
+        JSON,
+        nullable=False
+    )
+    preferred_skills: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True
+    )
+    required_skills: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True
+    )
+    experience_years_min: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True
+    )
+    experience_years_max: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True
+    )
+    education_level: Mapped[EducationLevel] = mapped_column(
+        SQLEnum(EducationLevel),
+        default=EducationLevel.BACHELOR,
+        nullable=False
+    )
 
-    # Ghost Job Prevention Fields
-    status = Column(String(20), nullable=False, default=JobStatus.DRAFT.value)
-    verification_level = Column(String(20), nullable=False, default=VerificationLevel.NONE.value)
+    # Status Management
+    status: Mapped[JobStatus] = mapped_column(
+        SQLEnum(JobStatus),
+        default=JobStatus.DRAFT,
+        nullable=False,
+        index=True
+    )
 
-    # Hiring Pipeline Tracking
-    applications_count = Column(Integer, default=0)
-    screened_count = Column(Integer, default=0)
-    interviewed_count = Column(Integer, default=0)
-    offered_count = Column(Integer, default=0)
-    hired_count = Column(Integer, default=0)
-    last_activity = Column(DateTime(timezone=True), nullable=True)
+    # Analytics & Tracking
+    applications_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        index=True
+    )
+    views_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        index=True
+    )
+    saves_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
 
     # Timeline Management
-    posted_at = Column(DateTime(timezone=True), nullable=True)
-    application_deadline = Column(DateTime(timezone=True), nullable=True)
-    expected_start_date = Column(DateTime(timezone=True), nullable=True)
-    estimated_fill_date = Column(DateTime(timezone=True), nullable=True)
-    actual_fill_date = Column(DateTime(timezone=True), nullable=True)
-    closed_at = Column(DateTime(timezone=True), nullable=True)
-    closure_reason = Column(String(500))
+    posted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True
+    )
+    application_deadline: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True
+    )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True
+    )
+    closed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    closure_reason: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True
+    )
 
-    # Contact verification
-    hr_contact_email = Column(String(255), nullable=False)
-    hr_contact_phone = Column(String(50))
-    contact_verified = Column(Boolean, default=False)
-    contact_verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Contact and Application Information
+    hr_contact_email: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False
+    )
+    hr_contact_phone: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True
+    )
+    apply_url: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )  # External application URL
+    application_instructions: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
 
-    def __repr__(self):
-        return f"<JobPosting(id={self.id}, title='{self.title}', company_id={self.company_id})>"
+    # SEO and URL
+    slug: Mapped[str] = mapped_column(
+        String(200),
+        unique=True,
+        index=True,
+        nullable=False
+    )
 
-    # Business logic methods
+    # Priority and Featured
+    is_featured: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True
+    )
+    is_urgent: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True
+    )
+    priority_score: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        index=True
+    )
+
+    # RELATIONSHIPS with proper typing
+    company: Mapped["Company"] = relationship(
+        "Company",
+        back_populates="jobs",
+        lazy="select"
+    )
+    created_by_recruiter: Mapped[Optional["Recruiter"]] = relationship(
+        "Recruiter",
+        back_populates="created_jobs",
+        lazy="select"
+    )
+    applications: Mapped[List["Application"]] = relationship(
+        "Application",
+        back_populates="job",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Job(id={self.id}, title='{self.title}', company_id={self.company_id})>"
+
+    def __str__(self) -> str:
+        return f"{self.title} at {self.company_name} ({self.status.value})"
+
+    # Status properties
+    @property
     def is_active(self) -> bool:
-        """Check if job posting is active and posted"""
-        return self.status == JobStatus.ACTIVE.value and self.posted_at is not None
+        """Check if job posting is active and accepting applications"""
+        return (
+                self.status == JobStatus.ACTIVE and
+                self.posted_at is not None and
+                not self.is_expired and
+                not self.is_deleted
+        )
 
+    @property
+    def is_published(self) -> bool:
+        """Check if job is published (visible to public)"""
+        return self.posted_at is not None and not self.is_deleted
+
+    @property
+    def is_deleted(self) -> bool:
+        """Check if job is soft deleted"""
+        return self.deleted_at is not None
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if job has expired"""
+        if self.expires_at:
+            return datetime.utcnow() > self.expires_at
+        if self.application_deadline:
+            return datetime.utcnow() > self.application_deadline
+        return False
+
+    @property
+    def is_draft(self) -> bool:
+        """Check if job is in draft status"""
+        return self.status == JobStatus.DRAFT
+
+    @property
+    def is_closed(self) -> bool:
+        """Check if job is closed (filled, cancelled, etc.)"""
+        return self.status in [JobStatus.FILLED, JobStatus.CANCELLED, JobStatus.EXPIRED]
+
+    # Time-based properties
+    @property
     def days_live(self) -> int:
         """Calculate days since posting"""
         if self.posted_at is None:
             return 0
         return (datetime.utcnow() - self.posted_at).days
 
-    def has_suspicious_activity(self) -> bool:
-        """Check for ghost job red flags"""
-        days_since_posted = self.days_live()
+    @property
+    def days_until_deadline(self) -> Optional[int]:
+        """Days until application deadline"""
+        if self.application_deadline:
+            delta = self.application_deadline - datetime.utcnow()
+            return max(0, delta.days)
+        return None
 
-        # Red flags for ghost jobs
-        if (days_since_posted > 90 and
-                self.interviewed_count == 0 and
-                self.applications_count > 20):
-            return True
+    @property
+    def days_until_expiry(self) -> Optional[int]:
+        """Days until job expires"""
+        if self.expires_at:
+            delta = self.expires_at - datetime.utcnow()
+            return max(0, delta.days)
+        return None
 
-        if (self.applications_count > 100 and
-                self.screened_count == 0 and
-                days_since_posted > 30):
-            return True
+    @property
+    def is_recent(self) -> bool:
+        """Check if job was posted recently (last 7 days)"""
+        return self.days_live <= 7
 
-        if self.ghost_job_score is not None and self.ghost_job_score > 0.8:
-            return True
+    @property
+    def is_stale(self) -> bool:
+        """Check if job has been live for too long (>90 days)"""
+        return self.days_live > 90
 
-        # No activity for long time
-        if (self.last_activity is not None and
-                (datetime.utcnow() - self.last_activity).days > 30):
-            return True
+    # Application properties
+    @property
+    def can_accept_applications(self) -> bool:
+        """Check if job can accept new applications"""
+        return (
+                self.is_active and
+                not self.is_expired and
+                (self.application_deadline is None or self.application_deadline > datetime.utcnow())
+        )
 
-        return False
+    @property
+    def application_rate(self) -> float:
+        """Applications per view ratio"""
+        if self.views_count == 0:
+            return 0.0
+        return self.applications_count / self.views_count
 
-    def calculate_conversion_rates(self) -> Dict[str, float]:
-        """Calculate hiring funnel conversion rates"""
-        rates = {}
+    @property
+    def engagement_score(self) -> float:
+        """Overall engagement score based on views, applications, saves"""
+        if self.views_count == 0:
+            return 0.0
 
-        if self.applications_count > 0:
-            rates["application_to_screen"] = self.screened_count / self.applications_count
-            rates["application_to_interview"] = self.interviewed_count / self.applications_count
-            rates["application_to_hire"] = self.hired_count / self.applications_count
+        # Weighted score: applications are more valuable than saves
+        weighted_engagement = (self.applications_count * 10) + (self.saves_count * 3)
+        return weighted_engagement / self.views_count
 
-        if self.screened_count > 0:
-            rates["screen_to_interview"] = self.interviewed_count / self.screened_count
+    # Salary properties
+    @property
+    def has_salary_info(self) -> bool:
+        """Check if job has salary information"""
+        return self.salary_min is not None or self.salary_max is not None
 
-        if self.interviewed_count > 0:
-            rates["interview_to_hire"] = self.hired_count / self.interviewed_count
+    @property
+    def salary_range_display(self) -> str:
+        """Get human-readable salary range"""
+        if not self.has_salary_info:
+            return "Salary not disclosed"
 
-        return rates
+        currency_symbol = {"USD": "$", "EUR": "€", "GBP": "£"}.get(self.salary_currency, self.salary_currency)
 
-    def validate(self) -> List[str]:
-        """Validate job posting data"""
+        if self.salary_min and self.salary_max:
+            return f"{currency_symbol}{self.salary_min:,} - {currency_symbol}{self.salary_max:,}"
+        elif self.salary_min:
+            return f"{currency_symbol}{self.salary_min:,}+"
+        elif self.salary_max:
+            return f"Up to {currency_symbol}{self.salary_max:,}"
+
+        return "Salary not disclosed"
+
+    @property
+    def salary_midpoint(self) -> Optional[int]:
+        """Calculate salary midpoint"""
+        if self.salary_min and self.salary_max:
+            return (self.salary_min + self.salary_max) // 2
+        return self.salary_min or self.salary_max
+
+    # Skills and requirements properties
+    @property
+    def all_skills(self) -> List[str]:
+        """Get all skills (required + preferred)"""
+        skills = []
+        if self.required_skills:
+            skills.extend(self.required_skills)
+        if self.preferred_skills:
+            skills.extend(self.preferred_skills)
+        return list(set(skills))  # Remove duplicates
+
+    @property
+    def skill_count(self) -> int:
+        """Total number of unique skills"""
+        return len(self.all_skills)
+
+    @property
+    def experience_range_display(self) -> str:
+        """Get human-readable experience range"""
+        if self.experience_years_min and self.experience_years_max:
+            return f"{self.experience_years_min}-{self.experience_years_max} years"
+        elif self.experience_years_min:
+            return f"{self.experience_years_min}+ years"
+        elif self.experience_years_max:
+            return f"Up to {self.experience_years_max} years"
+        return "Experience not specified"
+
+    # Location properties
+    @property
+    def is_remote_job(self) -> bool:
+        """Check if job is fully remote"""
+        return self.working_type == WorkingType.REMOTE
+
+    @property
+    def location_display(self) -> str:
+        """Get human-readable location"""
+        if self.is_remote_job:
+            return "Remote"
+
+        location_parts = []
+        if self.city:
+            location_parts.append(self.city)
+        if self.state:
+            location_parts.append(self.state)
+        if self.country and self.country != "US":  # Don't show US for brevity
+            location_parts.append(self.country)
+
+        if location_parts:
+            base_location = ", ".join(location_parts)
+            if self.working_type == WorkingType.HYBRID:
+                return f"{base_location} (Hybrid)"
+            return base_location
+
+        return self.location or "Location not specified"
+
+    # Business logic methods
+    def publish(self) -> None:
+        """Publish the job posting"""
+        if self.status == JobStatus.DRAFT:
+            self.status = JobStatus.ACTIVE
+            self.posted_at = datetime.utcnow()
+
+            # Set default expiry if not set (90 days)
+            if not self.expires_at:
+                self.expires_at = datetime.utcnow() + timedelta(days=90)
+
+    def pause(self, reason: Optional[str] = None) -> None:
+        """Pause the job posting"""
+        self.status = JobStatus.PAUSED
+        if reason:
+            self.closure_reason = reason
+
+    def close(self, status: JobStatus, reason: Optional[str] = None) -> None:
+        """Close the job posting"""
+        if status in [JobStatus.FILLED, JobStatus.CANCELLED, JobStatus.EXPIRED]:
+            self.status = status
+            self.closed_at = datetime.utcnow()
+            if reason:
+                self.closure_reason = reason
+
+    def reopen(self) -> None:
+        """Reopen a closed job"""
+        if self.is_closed:
+            self.status = JobStatus.ACTIVE
+            self.closed_at = None
+            self.closure_reason = None
+
+    def soft_delete(self, reason: Optional[str] = None) -> None:
+        """Soft delete the job posting"""
+        self.deleted_at = datetime.utcnow()
+        if reason:
+            self.closure_reason = reason
+
+    def restore(self) -> None:
+        """Restore a soft-deleted job"""
+        self.deleted_at = None
+
+    def increment_views(self) -> None:
+        """Increment view counter"""
+        self.views_count += 1
+
+    def increment_applications(self) -> None:
+        """Increment application counter"""
+        self.applications_count += 1
+
+    def increment_saves(self) -> None:
+        """Increment saves counter"""
+        self.saves_count += 1
+
+    def update_priority(self, score: int) -> None:
+        """Update priority score (0-100)"""
+        self.priority_score = max(0, min(100, score))
+
+    def make_featured(self, featured: bool = True) -> None:
+        """Set featured status"""
+        self.is_featured = featured
+        if featured:
+            self.priority_score = max(self.priority_score, 80)
+
+    def make_urgent(self, urgent: bool = True) -> None:
+        """Set urgent status"""
+        self.is_urgent = urgent
+        if urgent:
+            self.priority_score = max(self.priority_score, 90)
+
+    # Validation methods
+    def validate_salary_range(self) -> List[str]:
+        """Validate salary range"""
         errors = []
 
-        if not self.title or len(self.title) < 10 or len(self.title) > 200:
-            errors.append("title must be between 10 and 200 characters")
+        if self.salary_min and self.salary_max:
+            if self.salary_min > self.salary_max:
+                errors.append("Minimum salary cannot exceed maximum salary")
+            if self.salary_max > self.salary_min * 5:
+                errors.append("Salary range too wide (max cannot be 5x more than min)")
 
-        if not self.description or len(self.description) < 100:
-            errors.append("description must be at least 100 characters")
-
-        if not self.company_id:
-            errors.append("company_id is required")
-
-        if not self.requirements or len(self.requirements) < 3:
-            errors.append("at least 3 requirements needed")
-
-        if not self.hr_contact_email:
-            errors.append("hr_contact_email is required")
+        if self.salary_min and self.salary_min < 0:
+            errors.append("Salary cannot be negative")
 
         return errors
 
-    # Property helpers for enum fields
-    @property
-    def job_level(self) -> Optional[JobLevel]:
-        """Get JobLevel enum from string value"""
-        try:
-            return JobLevel(self.level) if self.level else None
-        except ValueError:
-            return None
+    def validate_requirements(self) -> List[str]:
+        """Validate job requirements"""
+        errors = []
 
-    @job_level.setter
-    def job_level(self, value: JobLevel):
-        """Set level from JobLevel enum"""
-        self.level = value.value if value else None
+        if not self.requirements or len(self.requirements) < 3:
+            errors.append("At least 3 requirements are needed")
 
-    @property
-    def job_type(self) -> Optional[JobType]:
-        """Get JobType enum from string value"""
-        try:
-            return JobType(self.type) if self.type else None
-        except ValueError:
-            return None
+        if len(self.requirements) > 20:
+            errors.append("Too many requirements (max 20)")
 
-    @job_type.setter
-    def job_type(self, value: JobType):
-        """Set type from JobType enum"""
-        self.type = value.value if value else None
+        return errors
 
-    @property
-    def job_status(self) -> Optional[JobStatus]:
-        """Get JobStatus enum from string value"""
-        try:
-            return JobStatus(self.status) if self.status else None
-        except ValueError:
-            return None
+    def validate_timeline(self) -> List[str]:
+        """Validate job timeline"""
+        errors = []
 
-    @job_status.setter
-    def job_status(self, value: JobStatus):
-        """Set status from JobStatus enum"""
-        self.status = value.value if value else None
+        now = datetime.utcnow()
 
-    @property
-    def education_level_enum(self) -> Optional[EducationLevel]:
-        """Get EducationLevel enum from string value"""
-        try:
-            return EducationLevel(self.education_level) if self.education_level else None
-        except ValueError:
-            return None
+        if self.application_deadline and self.application_deadline <= now:
+            errors.append("Application deadline cannot be in the past")
 
-    @education_level_enum.setter
-    def education_level_enum(self, value: EducationLevel):
-        """Set education_level from EducationLevel enum"""
-        self.education_level = value.value if value else None
+        if self.expires_at and self.expires_at <= now:
+            errors.append("Expiry date cannot be in the past")
 
-    @property
-    def verification_level_enum(self) -> Optional[VerificationLevel]:
-        """Get VerificationLevel enum from string value"""
-        try:
-            return VerificationLevel(self.verification_level) if self.verification_level else None
-        except ValueError:
-            return None
+        if (self.application_deadline and self.expires_at and
+                self.application_deadline > self.expires_at):
+            errors.append("Application deadline cannot be after expiry date")
 
-    @verification_level_enum.setter
-    def verification_level_enum(self, value: VerificationLevel):
-        """Set verification_level from VerificationLevel enum"""
-        self.verification_level = value.value if value else None
+        return errors
 
+    def get_validation_errors(self) -> List[str]:
+        """Get all validation errors"""
+        errors = []
+        errors.extend(self.validate_salary_range())
+        errors.extend(self.validate_requirements())
+        errors.extend(self.validate_timeline())
+        return errors
 
-# Example usage and helper functions
-def create_job_posting(
-        title: str,
-        description: str,
-        company_id: uuid.UUID,
-        hr_contact_email: str,
-        level: JobLevel = JobLevel.MID,
-        job_type: JobType = JobType.FULL_TIME,
-        **kwargs
-) -> Job:
-    """Helper function to create a new job posting"""
-    job = Job(
-        title=title,
-        description=description,
-        company_id=company_id,
-        hr_contact_email=hr_contact_email,
-        level=level.value,
-        type=job_type.value,
-        education_level=EducationLevel.BACHELOR.value,
-        **kwargs
-    )
-    return job
+    # Search and filter helpers
+    def matches_salary_range(self, min_salary: Optional[int], max_salary: Optional[int]) -> bool:
+        """Check if job matches salary range criteria"""
+        if not min_salary and not max_salary:
+            return True
 
+        job_min = self.salary_min or 0
+        job_max = self.salary_max or float('inf')
 
-# Database indexes (add these as migrations)
-"""
-Recommended indexes for PostgreSQL:
+        if min_salary and job_max < min_salary:
+            return False
+        if max_salary and job_min > max_salary:
+            return False
 
-CREATE INDEX idx_job_postings_company_id ON job_postings(company_id);
-CREATE INDEX idx_job_postings_status ON job_postings(status);
-CREATE INDEX idx_job_postings_posted_at ON job_postings(posted_at);
-CREATE INDEX idx_job_postings_location ON job_postings(city, state, country);
-CREATE INDEX idx_job_postings_level ON job_postings(level);
-CREATE INDEX idx_job_postings_type ON job_postings(type);
-CREATE INDEX idx_job_postings_salary ON job_postings(salary_min, salary_max);
-CREATE INDEX idx_job_postings_ghost_score ON job_postings(ghost_job_score);
-CREATE INDEX idx_job_postings_verification ON job_postings(verification_level);
-CREATE INDEX idx_job_postings_active ON job_postings(status, posted_at) WHERE status = 'active';
+        return True
 
--- For JSON queries
-CREATE INDEX idx_job_postings_requirements_gin ON job_postings USING gin(requirements);
-CREATE INDEX idx_job_postings_benefits_gin ON job_postings USING gin(benefits);
-"""
+    def matches_skills(self, required_skills: List[str]) -> bool:
+        """Check if job matches required skills"""
+        if not required_skills:
+            return True
+
+        job_skills = [skill.lower() for skill in self.all_skills]
+        return any(skill.lower() in job_skills for skill in required_skills)
+
+    # Query helpers
+    @classmethod
+    def active_jobs_filter(cls):
+        """Filter for active jobs"""
+        return (
+                (cls.status == JobStatus.ACTIVE) &
+                (cls.posted_at.isnot(None)) &
+                (cls.deleted_at.is_(None))
+        )
+
+    @classmethod
+    def published_jobs_filter(cls):
+        """Filter for published jobs"""
+        return (cls.posted_at.isnot(None)) & (cls.deleted_at.is_(None))
+
+    @classmethod
+    def company_jobs_filter(cls, company_id: uuid.UUID):
+        """Filter for company jobs"""
+        return cls.company_id == company_id
+
+    @classmethod
+    def recent_jobs_filter(cls, days: int = 7):
+        """Filter for recent jobs"""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        return cls.posted_at >= cutoff_date
+
+    @classmethod
+    def featured_jobs_filter(cls):
+        """Filter for featured jobs"""
+        return cls.is_featured == True
+
+    @classmethod
+    def remote_jobs_filter(cls):
+        """Filter for remote jobs"""
+        return cls.working_type == WorkingType.REMOTE

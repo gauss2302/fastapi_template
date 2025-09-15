@@ -3,12 +3,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
-from app.core.exceptions import AuthorizationError, NotFoundError
-from app.middleware.rate_limiter import strict_rate_limit, api_rate_limit, rate_limit
+from app.core.exceptions.exceptions import AuthorizationError, NotFoundError
+from app.middleware.rate_limiter.rate_limiter import strict_rate_limit, api_rate_limit, rate_limit
 from app.schemas.job_schema import JobPostingResponse, JobPostingCreate, JobPostingUpdate, JobSearchResponse, \
     JobSearchRequest, CompanyJobsResponse, JobStatus
 from app.models.user import User
-from app.core.dependencies import get_current_user, get_job_service
+from app.core.deps.dependencies import get_current_user, get_job_service
 from app.services.job_service import JobService
 
 router = APIRouter()

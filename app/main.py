@@ -1,21 +1,20 @@
-import structlog
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError, HTTPException
+from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.logger import config_structlog, AppLogger
-from app.core.config import settings
-from app.core.redis import redis_service
-from app.core.exceptions import BaseAPIException
+from app.core.logging.logger import config_structlog, AppLogger
+from app.core.config.config import settings
+from app.core.redis.redis import redis_service
+from app.core.exceptions.exceptions import BaseAPIException
 from app.api.v1.api import api_router
-from app.middleware.auth_middleware import AuthMiddleware
-from app.middleware.rate_limiter import RateLimitMiddleware
-from app.middleware.request_logging import RequestLoggingMiddleware
+from app.middleware.auth_middleware.auth_middleware import AuthMiddleware
+from app.middleware.rate_limiter.rate_limiter import RateLimitMiddleware
+from app.middleware.rate_limiter.request_logging import RequestLoggingMiddleware
 
 config_structlog()
 logger = AppLogger("main")

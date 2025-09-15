@@ -1,12 +1,12 @@
 from typing import Optional
 from uuid import UUID
-from fastapi import Request, HTTPException, status
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+import time
 
-from app.core.security import security_service
-from app.services.user_service import UserService
-from app.core.dependencies import get_user_service
+from app.core.security.security import security_service
+from app.core.deps.dependencies import get_user_service
 from app.schemas.user import User
 
 
@@ -14,7 +14,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
 
-        # Публичные маршруты (не требуют аутентификации)
         self.public_paths = {
             "/health",
             "/docs",
@@ -70,7 +69,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return None, None
 
         # Проверяем не истекает ли токен скоро (в течение 5 минут)
-        import time
         current_time = time.time()
         token_exp = payload.exp
         time_until_expiry = token_exp - current_time

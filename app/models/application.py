@@ -1,12 +1,21 @@
-from sqlalchemy import Boolean, Column, DateTime, String, Text, ForeignKey, Integer, Enum as SQLEnum, JSON
+from typing import Optional, List, Dict, Any
+from sqlalchemy import String, Text, ForeignKey, Integer, JSON, Index, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from datetime import datetime, timedelta
 import uuid
 import enum
 
-from app.core.database import Base
+from app.models.company import Company
+from app.models.job_position import Job
+from app.models.recruiter import Recruiter
+from app.models.user import User
+
+
+class Base(DeclarativeBase):
+    """Base class for all models."""
+    pass
 
 
 class ApplicationStatus(str, enum.Enum):
@@ -31,9 +40,12 @@ class ApplicationSource(str, enum.Enum):
 
 
 class Application(Base):
+    """Application model with modern SQLAlchemy 2.0 syntax."""
+
     __tablename__ = "applications"
 
-    id = Column(
+    # Primary key
+    id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
@@ -41,69 +53,131 @@ class Application(Base):
     )
 
     # Foreign keys
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    job_id = Column(UUID(as_uuid=True), ForeignKey("job_postings.id"), nullable=False, index=True)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, index=True)
-    recruiter_id = Column(UUID(as_uuid=True), ForeignKey("recruiters.id"), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        index=True
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("job_postings.id"),
+        index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id"),
+        index=True
+    )
+    recruiter_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recruiters.id"),
+        index=True
+    )
 
     # Application content
-    cover_letter = Column(Text, nullable=True)
-    resume_url = Column(Text, nullable=True)
-    portfolio_url = Column(String(500), nullable=True)
+    cover_letter: Mapped[Optional[str]] = mapped_column(Text)
+    resume_url: Mapped[Optional[str]] = mapped_column(Text)
+    portfolio_url: Mapped[Optional[str]] = mapped_column(String(500))
 
     # Application metadata
-    source = Column(SQLEnum(ApplicationSource), default=ApplicationSource.WEBSITE, nullable=False, index=True)
-    referrer_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    source: Mapped[ApplicationSource] = mapped_column(
+        default=ApplicationSource.WEBSITE,
+        index=True
+    )
+    referrer_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id")
+    )
 
     # Custom application data (JSON field for flexibility)
-    additional_data = Column(JSON, nullable=True)
+    additional_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
 
     # Status and timeline
-    status = Column(SQLEnum(ApplicationStatus), default=ApplicationStatus.PENDING, nullable=False, index=True)
-    applied_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    last_updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    status_updated_at = Column(DateTime(timezone=True), nullable=True)
+    status: Mapped[ApplicationStatus] = mapped_column(
+        default=ApplicationStatus.PENDING,
+        index=True
+    )
+    applied_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(),
+        index=True
+    )
+    last_updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+    status_updated_at: Mapped[Optional[datetime]]
 
     # Recruiter actions and notes
-    recruiter_notes = Column(Text, nullable=True)
-    internal_rating = Column(Integer, nullable=True)  # 1-5 rating
-    viewed_at = Column(DateTime(timezone=True), nullable=True)
+    recruiter_notes: Mapped[Optional[str]] = mapped_column(Text)
+    internal_rating: Mapped[Optional[int]] = mapped_column(Integer)
+    viewed_at: Mapped[Optional[datetime]]
 
     # Interview and process tracking
-    interview_scheduled_at = Column(DateTime(timezone=True), nullable=True)
-    interview_completed_at = Column(DateTime(timezone=True), nullable=True)
-    technical_test_sent_at = Column(DateTime(timezone=True), nullable=True)
-    technical_test_completed_at = Column(DateTime(timezone=True), nullable=True)
+    interview_scheduled_at: Mapped[Optional[datetime]]
+    interview_completed_at: Mapped[Optional[datetime]]
+    technical_test_sent_at: Mapped[Optional[datetime]]
+    technical_test_completed_at: Mapped[Optional[datetime]]
 
     # Offer and final decision
-    offer_sent_at = Column(DateTime(timezone=True), nullable=True)
-    offer_details = Column(JSON, nullable=True)  # Salary, benefits, etc.
-    offer_expires_at = Column(DateTime(timezone=True), nullable=True)
+    offer_sent_at: Mapped[Optional[datetime]]
+    offer_details: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    offer_expires_at: Mapped[Optional[datetime]]
 
     # Rejection details
-    rejection_reason = Column(String(500), nullable=True)
-    rejected_at = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(String(500))
+    rejected_at: Mapped[Optional[datetime]]
 
     # System fields
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(),
+        onupdate=func.now()
+    )
 
-    # Relationships
-    user = relationship("User", foreign_keys=[user_id], back_populates="applications")
-    job = relationship("Job", back_populates="applications")
-    company = relationship("Company", back_populates="applications")
-    recruiter = relationship("Recruiter", back_populates="applications")
-    referrer = relationship("User", foreign_keys=[referrer_user_id])
+    # Relationships with type annotations
+    user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[user_id],
+        back_populates="applications"
+    )
+    job: Mapped["Job"] = relationship("Job", back_populates="applications")
+    company: Mapped["Company"] = relationship("Company", back_populates="applications")
+    recruiter: Mapped[Optional["Recruiter"]] = relationship(
+        "Recruiter",
+        back_populates="applications"
+    )
+    referrer: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[referrer_user_id]
+    )
 
-    # Composite indexes for better query performance
+    # Table constraints and indexes
     __table_args__ = (
-        # Most common queries
-        {'schema': None}
+        # Composite indexes for common queries
+        Index("ix_applications_status_applied_at", "status", "applied_at"),
+        Index("ix_applications_company_status", "company_id", "status"),
+        Index("ix_applications_recruiter_status", "recruiter_id", "status"),
+        Index("ix_applications_user_status", "user_id", "status"),
+
+        # Check constraints
+        CheckConstraint(
+            "internal_rating >= 1 AND internal_rating <= 5",
+            name="check_rating_range"
+        ),
+        CheckConstraint(
+            "offer_expires_at > offer_sent_at",
+            name="check_offer_expiry"
+        ),
+        CheckConstraint(
+            "interview_scheduled_at > applied_at",
+            name="check_interview_after_application"
+        ),
     )
 
     def __repr__(self) -> str:
-        return f"<Application(id={self.id}, user_id={self.user_id}, job_id={self.job_id}, status={self.status})>"
+        return (f"<Application(id={self.id}, user_id={self.user_id}, "
+                f"job_id={self.job_id}, status={self.status})>")
 
     # Business logic properties
     @property
@@ -149,7 +223,8 @@ class Application(Base):
     @property
     def has_interview_scheduled(self) -> bool:
         """Check if interview is scheduled."""
-        return self.interview_scheduled_at is not None and self.interview_scheduled_at > datetime.utcnow()
+        return (self.interview_scheduled_at is not None and
+                self.interview_scheduled_at > datetime.utcnow())
 
     @property
     def is_offer_pending(self) -> bool:
@@ -159,9 +234,13 @@ class Application(Base):
                 self.offer_expires_at > datetime.utcnow())
 
     # Business logic methods
-    def update_status(self, new_status: ApplicationStatus, notes: str = None, reason: str = None) -> None:
+    def update_status(
+            self,
+            new_status: ApplicationStatus,
+            notes: Optional[str] = None,
+            reason: Optional[str] = None
+    ) -> None:
         """Update application status with timestamp."""
-        old_status = self.status
         self.status = new_status
         self.status_updated_at = datetime.utcnow()
         self.last_updated_at = datetime.utcnow()
@@ -187,12 +266,22 @@ class Application(Base):
 
     def schedule_interview(self, interview_datetime: datetime) -> None:
         """Schedule interview for application."""
+        if interview_datetime <= datetime.utcnow():
+            raise ValueError("Interview cannot be scheduled in the past")
+
         self.interview_scheduled_at = interview_datetime
         if self.status == ApplicationStatus.PENDING:
             self.update_status(ApplicationStatus.SCREENING)
 
-    def complete_interview(self, rating: int = None, notes: str = None) -> None:
+    def complete_interview(
+            self,
+            rating: Optional[int] = None,
+            notes: Optional[str] = None
+    ) -> None:
         """Mark interview as completed."""
+        if rating is not None and (rating < 1 or rating > 5):
+            raise ValueError("Rating must be between 1 and 5")
+
         self.interview_completed_at = datetime.utcnow()
         if rating:
             self.internal_rating = rating
@@ -208,8 +297,15 @@ class Application(Base):
         """Mark technical test as completed."""
         self.technical_test_completed_at = datetime.utcnow()
 
-    def make_offer(self, offer_details: dict, expires_in_days: int = 7) -> None:
+    def make_offer(
+            self,
+            offer_details: Dict[str, Any],
+            expires_in_days: int = 7
+    ) -> None:
         """Make job offer to candidate."""
+        if expires_in_days <= 0:
+            raise ValueError("Offer expiry must be positive")
+
         self.offer_details = offer_details
         self.offer_sent_at = datetime.utcnow()
         self.offer_expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
@@ -217,14 +313,18 @@ class Application(Base):
 
     def accept_offer(self) -> None:
         """Accept job offer."""
+        if self.status != ApplicationStatus.OFFERED:
+            raise ValueError("Can only accept an offered application")
         self.update_status(ApplicationStatus.ACCEPTED)
 
-    def reject_offer(self, reason: str = None) -> None:
+    def reject_offer(self, reason: Optional[str] = None) -> None:
         """Reject job offer."""
         self.update_status(ApplicationStatus.REJECTED, reason=reason)
 
-    def withdraw_application(self, reason: str = None) -> None:
+    def withdraw_application(self, reason: Optional[str] = None) -> None:
         """Withdraw application (candidate action)."""
+        if self.is_closed:
+            raise ValueError("Cannot withdraw a closed application")
         self.update_status(ApplicationStatus.WITHDRAWN, reason=reason)
 
     # Validation methods
@@ -240,3 +340,6 @@ class Application(Base):
         """Check if offer can be made."""
         return self.status in [ApplicationStatus.INTERVIEWED, ApplicationStatus.TECHNICAL_TEST]
 
+    def can_send_technical_test(self) -> bool:
+        """Check if technical test can be sent."""
+        return self.status in [ApplicationStatus.SCREENING, ApplicationStatus.INTERVIEWED]

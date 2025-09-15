@@ -6,7 +6,7 @@ from uuid import UUID
 
 from requests import Request
 
-from app.middleware.rate_limiter import rate_limit, strict_rate_limit
+from app.middleware.rate_limiter.rate_limiter import rate_limit, strict_rate_limit
 from app.schemas.recruiter import (
     Recruiter, RecruiterCreate, RecruiterUpdate, RecruiterApproval,
     RecruiterPermissions, RecruiterInvitationRequest,
@@ -14,7 +14,7 @@ from app.schemas.recruiter import (
 from app.schemas.user import User
 from app.models.recruiter import RecruiterStatus
 from app.services.company_service import CompanyService
-from app.core.dependencies import (
+from app.core.deps.dependencies import (
     get_current_user,
     get_current_superuser,
     get_company_service,

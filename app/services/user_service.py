@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
-from app.core.logger import AppLogger
+from app.core.logging.logger import AppLogger
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import GoogleOAuthService
 from app.services.github_auth_service import GitHubOAuthService
@@ -16,10 +16,10 @@ from app.schemas.user import (
     UserLogin,
     UserPasswordUpdate,
     GoogleUserInfo,
-    Token, GitHubUserInfo,
+    GitHubUserInfo,
 )
-from app.core.security import security_service
-from app.core.exceptions import NotFoundError, AuthenticationError, ConflictError
+from app.core.security.security import security_service
+from app.core.exceptions.exceptions import NotFoundError, AuthenticationError, ConflictError
 
 
 class UserService:

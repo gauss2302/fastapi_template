@@ -8,7 +8,7 @@ from uuid import UUID
 import re
 from pydantic import HttpUrl
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions.exceptions import ConflictError, NotFoundError
 from app.models.company import Company, CompanyStatus
 from app.schemas.company import (
     CompanyCreate, CompanyUpdate, CompanyVerification, CompanySearchFilters

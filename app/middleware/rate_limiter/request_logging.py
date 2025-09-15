@@ -3,7 +3,7 @@ import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from app.core.logger import AppLogger
+from app.core.logging.logger import AppLogger
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):

@@ -12,7 +12,7 @@ from limits import parse
 from limits.storage import RedisStorage, MemoryStorage
 from limits.strategies import MovingWindowRateLimiter
 
-from app.core.redis import RedisService
+from app.core.redis.redis import RedisService
 
 
 class RateLimitType(str, Enum):

@@ -2,14 +2,8 @@ from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 from alembic import context
 
-from app.core.config import settings
-from app.core.database import Base
-
-from app.models.user import User
-from app.models.company import Company
-from app.models.recruiter import Recruiter
-from app.models.job_position import Job
-
+from app.core.config.config import settings
+from app.core.database.database import Base
 
 # this is the Alembic Config object
 config = context.config

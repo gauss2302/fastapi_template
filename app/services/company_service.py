@@ -15,7 +15,7 @@ from app.schemas.recruiter import (
 )
 from app.models.company import CompanyStatus
 from app.models.recruiter import RecruiterStatus
-from app.core.exceptions import NotFoundError, ConflictError, AuthorizationError
+from app.core.exceptions.exceptions import NotFoundError, ConflictError, AuthorizationError
 
 
 class CompanyService:

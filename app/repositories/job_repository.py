@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 import re
 
-from app.core.exceptions import ConflictError, ValidationError, NotFoundError
+from app.core.exceptions.exceptions import ConflictError, ValidationError, NotFoundError
 from app.schemas.job_schema import JobPostingCreate, JobSearchRequest, JobPostingUpdate
 from app.models.job_position import Job, JobStatus, WorkingType
 

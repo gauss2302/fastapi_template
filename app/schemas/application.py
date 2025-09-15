@@ -58,6 +58,31 @@ class ApplicationBase(BaseModel):
         return v
 
 
+class Application(ApplicationBase):
+    """Полная заявка (модель для хранения в БД)."""
+
+    application_id: UUID = Field(..., description="ID самой заявки")
+    applicant_id: UUID = Field(..., description="ID соискателя")
+    company_id: UUID = Field(..., description="ID компании")
+    recruiter_id: Optional[UUID] = Field(None, description="ID рекрутера")
+
+    # Текущий статус заявки
+    status: ApplicationStatus = Field(default=ApplicationStatus.PENDING, description="Статус заявки")
+
+    # Служебные поля
+    applied_at: datetime = Field(default_factory=datetime.utcnow, description="Дата подачи заявки")
+    last_updated_at: datetime = Field(default_factory=datetime.utcnow, description="Когда последний раз обновляли")
+
+    # Доп. инфо от рекрутера
+    recruiter_notes: Optional[str] = Field(None, max_length=1000, description="Заметки рекрутера")
+    interview_scheduled_at: Optional[datetime] = Field(None, description="Назначенное интервью")
+    rejection_reason: Optional[str] = Field(None, max_length=500, description="Причина отказа")
+    offer_details: Optional[Dict[str, Any]] = Field(None, description="Детали оффера")
+
+    class Config:
+        from_attributes = True
+
+
 class ApplicationCreate(BaseModel):
     """Создание заявки (applicant_id определится автоматически)"""
     job_id: UUID = Field(..., description="ID вакансии")

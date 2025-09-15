@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
-from app.core.redis import RedisService
+from app.core.redis.redis import RedisService
 
 
 class WebAuthService:

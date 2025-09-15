@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Any
 from uuid import UUID
 
-from app.middleware.rate_limiter import rate_limit
+from app.middleware.rate_limiter.rate_limiter import rate_limit
 from app.schemas.user import UserUpdate, User
 from app.services.user_service import UserService
-from app.core.dependencies import (
+from app.core.deps.dependencies import (
     get_user_service,
     get_current_superuser,
     get_current_user,

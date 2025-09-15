@@ -6,7 +6,7 @@ from app.repositories.recruiter_repository import RecruiterRepository
 from app.schemas.job_schema import JobPostingCreate, JobPostingResponse, JobStatus, JobStatusUpdate, JobSearchRequest, \
     JobPostingListItem
 from app.models.recruiter import RecruiterStatus
-from app.core.exceptions import AuthorizationError, NotFoundError, ValidationError
+from app.core.exceptions.exceptions import AuthorizationError, NotFoundError, ValidationError
 
 from uuid import UUID
 
