@@ -6,10 +6,11 @@ from app.middleware.rate_limiter import rate_limit
 from app.schemas.user import UserUpdate, User
 from app.services.user_service import UserService
 from app.core.dependencies import (
-    get_current_user,
     get_user_service,
     get_current_superuser,
+    get_current_user,
 )
+
 
 router = APIRouter()
 

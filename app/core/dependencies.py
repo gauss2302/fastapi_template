@@ -63,77 +63,88 @@ async def get_user_service(
     return UserService(user_repo, google_oauth_service, github_oauth_service)
 
 
-async def get_current_user(
-        credentials: HTTPAuthorizationCredentials = Depends(security),
-        user_service: UserService = Depends(get_user_service),
-) -> User:
-    """Get current authenticated user."""
-    token = credentials.credentials
+# async def get_current_user(
+#         credentials: HTTPAuthorizationCredentials = Depends(security),
+#         user_service: UserService = Depends(get_user_service),
+# ) -> User:
+#     """Get current authenticated user."""
+#     token = credentials.credentials
+#
+#     # Verify token
+#     payload = security_service.verify_token(token)
+#     if not payload or not payload.sub:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail="Invalid authentication credentials",
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#
+#     # Get user
+#     try:
+#         user_id = UUID(payload.sub)
+#         user = await user_service.get_user_by_id(user_id)
+#         if not user:
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="User not found",
+#                 headers={"WWW-Authenticate": "Bearer"},
+#             )
+#
+#         if not user.is_active:
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="User account is deactivated",
+#                 headers={"WWW-Authenticate": "Bearer"},
+#             )
+#
+#         return user
+#
+#     except ValueError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail="Invalid user ID in token",
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
 
-    # Verify token
-    payload = security_service.verify_token(token)
-    if not payload or not payload.sub:
+
+def get_current_user(request: Request) -> User:
+    """Get current authenticated user from middleware."""
+    user = getattr(request.state, 'current_user', None)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    # Get user
-    try:
-        user_id = UUID(payload.sub)
-        user = await user_service.get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account is deactivated",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        return user
-
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user ID in token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    return user
 
 
-async def get_current_superuser(current_user: User = Depends(get_current_user)) -> User:
-    """Get current superuser."""
-    if not current_user.is_superuser:
+def get_current_superuser(request: Request) -> User:
+    """Get current superuser from middleware."""
+    user = get_current_user(request)
+    if not user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-    return current_user
+    return user
 
 
-def get_current_active_user(
-        current_user: User = Depends(get_current_user),
-) -> User:
-    """Get current active user."""
-    if not current_user.is_active:
+def get_current_active_user(request: Request) -> User:
+    """Get current active user from middleware."""
+    user = get_current_user(request)
+    if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
         )
-    return current_user
+    return user
 
 
-async def get_authenticated_user_id(
-        current_user: User = Depends(get_current_user)
-) -> UUID:
+async def get_authenticated_user_id(request: Request) -> UUID:
     """Get current user ID for user-specific rate limiting."""
-    return current_user.id
+    user = get_current_user(request)
+    return user.id
 
 
 async def get_company_service(

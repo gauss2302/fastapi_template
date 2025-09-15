@@ -181,18 +181,6 @@ class CompanyService:
         return await self.company_repo.get_company_locations()
 
     # Recruiter management methods
-    async def create_recruiter_profile(
-            self,
-            recruiter_data: RecruiterCreate,
-            user_id: UUID
-    ) -> Recruiter:
-        """Create recruiter profile (requires company approval)"""
-        db_recruiter = await self.recruiter_repo.create(recruiter_data, user_id)
-
-        # TODO: Send notification to company admins
-        # await self.email_service.send_recruiter_application_notification(db_recruiter)
-
-        return Recruiter.model_validate(db_recruiter)
 
     async def invite_recruiter(
             self,

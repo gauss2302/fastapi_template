@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.redis import redis_service
 from app.core.exceptions import BaseAPIException
 from app.api.v1.api import api_router
+from app.middleware.auth_middleware import AuthMiddleware
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
 
@@ -21,12 +22,9 @@ logger = AppLogger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
-    # Startup
     logger.info("Starting application", app_name=settings.APP_NAME, version=settings.APP_VERSION)
 
     try:
-        # Initialize Redis
         await redis_service.init_redis()
         logger.info("Redis connection established")
 
@@ -36,13 +34,11 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to start application", error=str(e))
         raise
     finally:
-        # Shutdown
         logger.info("Shutting down application")
         await redis_service.close_redis()
         logger.info("Redis connection closed")
 
 
-# Create FastAPI application
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -61,7 +57,6 @@ app.add_middleware(
     allowed_hosts=settings.TRUSTED_HOSTS + (["*"] if settings.DEBUG else [])
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -70,8 +65,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(AuthMiddleware)
 
-# Custom exception handlers
+
 @app.exception_handler(BaseAPIException)
 async def api_exception_handler(request: Request, exc: BaseAPIException):
     """Handle custom API exceptions."""
@@ -155,7 +151,6 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all requests."""

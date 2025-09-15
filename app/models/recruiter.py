@@ -35,6 +35,9 @@ class Recruiter(Base):
     department = Column(String(100), nullable=True)  # HR, Talent Acquisition, etc.
     bio = Column(Text, nullable=True)
 
+    # Application
+    applications = relationship("Application", back_populates="recruiter")
+
     # Status and approval
     status = Column(SQLEnum(RecruiterStatus), default=RecruiterStatus.PENDING, nullable=False, index=True)
     approved_by = Column(UUID(as_uuid=True), ForeignKey("recruiters.id"),

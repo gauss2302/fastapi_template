@@ -87,6 +87,7 @@ class Company(Base):
     # Relationships
     recruiters = relationship("Recruiter", back_populates="company", cascade="all, delete-orphan")
     verified_by_user = relationship("User", foreign_keys=[verified_by])
+    applications = relationship("Application", back_populates="company")
 
     def __repr__(self) -> str:
         return f"<Company(id={self.id}, name={self.name}, status={self.status})>"

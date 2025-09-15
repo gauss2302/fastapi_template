@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from typing import List, Optional
 from uuid import UUID
 
@@ -124,7 +124,7 @@ async def get_company_locations(
 @strict_rate_limit()
 async def register_company(
         reg_data: CompanyRegistrationRequest,
-        current_user: User = Depends(get_current_user),
+        request: Request,
         company_service: CompanyService = Depends(get_company_service)
 ) -> Company:
     """
@@ -134,6 +134,7 @@ async def register_company(
       the first recruiter with admin permissions.
       """
     try:
+        current_user = get_current_user(request)
         company = await company_service.register_company(reg_data, current_user.id)
         return company
     except Exception as e:

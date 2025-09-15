@@ -1,16 +1,15 @@
-# alembic/env.py - ПРАВИЛЬНАЯ ВЕРСИЯ ДЛЯ СИНХРОННОЙ РАБОТЫ
 from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 from alembic import context
 
-# Импортируем наши модели и конфигурацию
 from app.core.config import settings
 from app.core.database import Base
 
-# Импортируем все модели чтобы Alembic их видел
 from app.models.user import User
 from app.models.company import Company
 from app.models.recruiter import Recruiter
+from app.models.job_position import Job
+
 
 # this is the Alembic Config object
 config = context.config
@@ -46,7 +45,6 @@ def do_run_migrations(connection: Connection) -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
 
-    # Создаём обычный синхронный engine
     connectable = create_engine(
         settings.DATABASE_URL_SYNC,
         poolclass=pool.NullPool,

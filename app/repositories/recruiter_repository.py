@@ -19,10 +19,9 @@ class RecruiterRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, recruiter_data: RecruiterCreate, user_id: UUID) -> Recruiter:
+    async def create_recruiter(self, recruiter_data: RecruiterCreate, user_id: UUID) -> Recruiter:
         """Create a new recruiter profile"""
-        # Check if user already has a recruiter profile
-        existing_recruiter = await self.get_by_user_id(user_id)
+        existing_recruiter = await self.get_by_recruiter_id(user_id)
         if existing_recruiter:
             raise ConflictError("User already has a recruiter profile")
 
@@ -69,7 +68,7 @@ class RecruiterRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_user_id(self, user_id: UUID) -> Optional[Recruiter]:
+    async def get_by_recruiter_id(self, user_id: UUID) -> Optional[Recruiter]:
         """Get recruiter by user ID"""
         result = await self.db.execute(
             select(Recruiter)

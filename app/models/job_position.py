@@ -1,14 +1,14 @@
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, JSON
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from datetime import datetime, timedelta
+from datetime import datetime
 import uuid
 import enum
 from typing import Dict, List, Optional
-import json
 
-Base = declarative_base()
+from app.core.database import Base
+
 
 
 class JobLevel(enum.Enum):
@@ -88,6 +88,9 @@ class Job(Base):
     level = Column(String(20), nullable=False)  # JobLevel enum values
     type = Column(String(20), nullable=False)  # JobType enum values
     location = Column(String(200))
+
+    # Application
+    applications = relationship("Application", back_populates="job")
 
     # Location coordinates
     latitude = Column(Float, nullable=True)

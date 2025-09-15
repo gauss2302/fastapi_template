@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from uuid import UUID
 
+from requests import Request
+
 from app.middleware.rate_limiter import rate_limit, strict_rate_limit
 from app.schemas.recruiter import (
     Recruiter, RecruiterCreate, RecruiterUpdate, RecruiterApproval,
@@ -28,7 +30,7 @@ router = APIRouter()
 @router.get("/me", response_model=Optional[Recruiter])
 @rate_limit
 async def get_my_recruiter_profile(
-        current_user: User = Depends(get_current_user),
+        request: Request,
         company_service: CompanyService = Depends(get_company_service),
 ) -> Optional[Recruiter]:
     """
@@ -37,6 +39,7 @@ async def get_my_recruiter_profile(
     Returns the recruiter profile for the authenticated user,
     or null if the user is not a recruiter.
     """
+    current_user = get_current_user(request)
     recruiter = await company_service.get_recruiter_by_user_id(current_user.id)
     return recruiter
 
