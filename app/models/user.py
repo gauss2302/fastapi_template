@@ -102,7 +102,8 @@ class User(Base):
         nullable=True
     )
 
-    # RELATIONSHIPS with proper typing
+    # RELATIONSHIPS - исправлены foreign_keys
+    # Профиль соискателя (один к одному)
     applicant_profile: Mapped[Optional["Applicant"]] = relationship(
         "Applicant",
         back_populates="user",
@@ -111,6 +112,7 @@ class User(Base):
         lazy="select"
     )
 
+    # Профиль рекрутера (один к одному)
     recruiter_profile: Mapped[Optional["Recruiter"]] = relationship(
         "Recruiter",
         back_populates="user",
@@ -119,17 +121,27 @@ class User(Base):
         lazy="select"
     )
 
-    # Связь с заявками как соискатель
+    # Заявки, поданные пользователем как соискатель
     applications: Mapped[List["Application"]] = relationship(
         "Application",
+        foreign_keys="[Application.user_id]",  # Явно указываем foreign key
         back_populates="user",
+        lazy="select"
+    )
+
+    # Заявки, где пользователь указан как рефферер
+    referred_applications: Mapped[List["Application"]] = relationship(
+        "Application",
+        foreign_keys="[Application.referrer_user_id]",  # Явно указываем foreign key
+        back_populates="referrer",
         lazy="select"
     )
 
     # Компании, которые верифицировал как админ
     verified_companies: Mapped[List["Company"]] = relationship(
         "Company",
-        foreign_keys="Company.verified_by",
+        foreign_keys="[Company.verified_by]",
+        back_populates="verified_by_user",
         lazy="select"
     )
 

@@ -209,6 +209,8 @@ class Recruiter(Base):
     approved_recruiters: Mapped[List["Recruiter"]] = relationship(
         "Recruiter",
         foreign_keys=[approved_by],
+        back_populates="approved_by_recruiter",
+        overlaps="approved_by_recruiter",  # Исправляет предупреждение SQLAlchemy
         lazy="select"
     )
 

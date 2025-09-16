@@ -30,11 +30,8 @@ class ApplicationSource(str, enum.Enum):
     LINKEDIN = "linkedin"
     EMAIL = "email"
 class Application(Base):
-    """Application model with modern SQLAlchemy 2.0 syntax."""
-
     __tablename__ = "applications"
 
-    # Primary key
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
@@ -42,129 +39,108 @@ class Application(Base):
         index=True,
     )
 
-    # Foreign keys
+    # Foreign keys - все обязательные связи
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         index=True
     )
+    
+    applicant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("applicants.id", ondelete="SET NULL"),  # При удалении applicant, заявка остается
+        nullable=True,  # Может быть null если заявку подал пользователь без профиля соискателя
+        index=True
+    )
+    
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("job_postings.id"),
+        ForeignKey("job_postings.id", ondelete="CASCADE"),
         index=True
     )
     company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("companies.id"),
+        ForeignKey("companies.id", ondelete="CASCADE"),
         index=True
     )
+    
+    # Опциональные связи
     recruiter_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("recruiters.id"),
+        index=True
+    )
+    referrer_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),  # Пользователь, который направил заявку
         index=True
     )
 
     # Application content
     cover_letter: Mapped[Optional[str]] = mapped_column(Text)
     resume_url: Mapped[Optional[str]] = mapped_column(Text)
-    portfolio_url: Mapped[Optional[str]] = mapped_column(String(500))
-
-    # Application metadata
-    source: Mapped[ApplicationSource] = mapped_column(
-        default=ApplicationSource.WEBSITE,
-        index=True
-    )
-    referrer_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id")
-    )
-
-    # Custom application data (JSON field for flexibility)
-    additional_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
-
-    # Status and timeline
-    status: Mapped[ApplicationStatus] = mapped_column(
-        default=ApplicationStatus.PENDING,
-        index=True
-    )
-    applied_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(),
-        index=True
-    )
-    last_updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(),
-        onupdate=func.now()
-    )
-    status_updated_at: Mapped[Optional[datetime]]
-
-    # Recruiter actions and notes
-    recruiter_notes: Mapped[Optional[str]] = mapped_column(Text)
-    internal_rating: Mapped[Optional[int]] = mapped_column(Integer)
-    viewed_at: Mapped[Optional[datetime]]
-
-    # Interview and process tracking
-    interview_scheduled_at: Mapped[Optional[datetime]]
-    interview_completed_at: Mapped[Optional[datetime]]
-    technical_test_sent_at: Mapped[Optional[datetime]]
-    technical_test_completed_at: Mapped[Optional[datetime]]
-
-    # Offer and final decision
-    offer_sent_at: Mapped[Optional[datetime]]
-    offer_details: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
-    offer_expires_at: Mapped[Optional[datetime]]
-
-    # Rejection details
-    rejection_reason: Mapped[Optional[str]] = mapped_column(String(500))
-    rejected_at: Mapped[Optional[datetime]]
-
-    # System fields
-    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    
+    # Metadata
+    source: Mapped[ApplicationSource] = mapped_column(default=ApplicationSource.WEBSITE, index=True)
+    status: Mapped[ApplicationStatus] = mapped_column(default=ApplicationStatus.PENDING, index=True)
+    
+    # Timestamps
+    applied_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    last_updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(),
-        onupdate=func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
-    # Relationships with type annotations
+    # RELATIONSHIPS с явным указанием foreign_keys
+    # Пользователь, подавший заявку
     user: Mapped["User"] = relationship(
         "User",
         foreign_keys=[user_id],
         back_populates="applications"
     )
-    job: Mapped["Job"] = relationship("Job", back_populates="applications")
-    company: Mapped["Company"] = relationship("Company", back_populates="applications")
+    
+    applicant: Mapped[Optional["Applicant"]] = relationship(
+        "Applicant",
+        back_populates="applications",
+        lazy="select"
+    )
+    
+    # Пользователь-рефферер (если есть)
+    referrer: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[referrer_user_id],
+        back_populates="referred_applications"
+    )
+    
+    # Вакансия
+    job: Mapped["Job"] = relationship(
+        "Job", 
+        back_populates="applications"
+    )
+    
+    # Компания
+    company: Mapped["Company"] = relationship(
+        "Company", 
+        back_populates="applications"
+    )
+    
+    # Рекрутер, ответственный за заявку
     recruiter: Mapped[Optional["Recruiter"]] = relationship(
         "Recruiter",
         back_populates="applications"
     )
-    referrer: Mapped[Optional["User"]] = relationship(
-        "User",
-        foreign_keys=[referrer_user_id]
-    )
 
-    # Table constraints and indexes
+    # Table constraints
     __table_args__ = (
-        # Composite indexes for common queries
+        # Уникальность: один пользователь может подать только одну заявку на вакансию
+        Index("ix_applications_user_job_unique", "user_id", "job_id", unique=True),
+        # Композитные индексы для частых запросов
         Index("ix_applications_status_applied_at", "status", "applied_at"),
         Index("ix_applications_company_status", "company_id", "status"),
-        Index("ix_applications_recruiter_status", "recruiter_id", "status"),
         Index("ix_applications_user_status", "user_id", "status"),
-
-        # Check constraints
-        CheckConstraint(
-            "internal_rating >= 1 AND internal_rating <= 5",
-            name="check_rating_range"
-        ),
-        CheckConstraint(
-            "offer_expires_at > offer_sent_at",
-            name="check_offer_expiry"
-        ),
-        CheckConstraint(
-            "interview_scheduled_at > applied_at",
-            name="check_interview_after_application"
-        ),
+        
+        # Уникальность: один пользователь может подать только одну заявку на вакансию
+        Index("ix_applications_user_job_unique", "user_id", "job_id", unique=True),
     )
-
     def __repr__(self) -> str:
         return (f"<Application(id={self.id}, user_id={self.user_id}, "
                 f"job_id={self.job_id}, status={self.status})>")

@@ -48,7 +48,7 @@ class Applicant(Base):
     # Foreign key to User
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         unique=True,
         index=True
     )
@@ -140,9 +140,12 @@ class Applicant(Base):
 
     # Relationships with type annotations
     user: Mapped["User"] = relationship("User", back_populates="applicant_profile")
+    
     applications: Mapped[List["Application"]] = relationship(
         "Application",
-        back_populates="applicant"
+        back_populates="applicant",
+        cascade="all, delete-orphan",  # При удалении applicant, удаляются и заявки
+        lazy="select"
     )
 
     # Table constraints and indexes

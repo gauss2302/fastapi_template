@@ -4,7 +4,7 @@ from alembic import context
 
 from app.core.config.config import settings
 from app.core.database.database import Base
-
+from app.models import User, Company, Recruiter, Applicant, Job, Application
 # this is the Alembic Config object
 config = context.config
 

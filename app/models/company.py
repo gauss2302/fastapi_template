@@ -28,7 +28,6 @@ class CompanySize(str, enum.Enum):
 class Company(Base):
     __tablename__ = "companies"
 
-    # Primary Key
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
@@ -37,166 +36,59 @@ class Company(Base):
     )
 
     # Basic company info
-    name: Mapped[str] = mapped_column(
-        String(255),
-        unique=True,
-        index=True,
-        nullable=False
-    )
-    legal_name: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-    slug: Mapped[str] = mapped_column(
-        String(100),
-        unique=True,
-        index=True,
-        nullable=False
-    )
-
-    # Company details
-    description: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
-    )
-    website: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-    industry: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        index=True
-    )
-    company_size: Mapped[Optional[CompanySize]] = mapped_column(
-        SQLEnum(CompanySize),
-        nullable=True,
-        index=True
-    )
-    founded_year: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True
-    )
-
-    # Contact info
-    headquarters: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-    email: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-    phone: Mapped[Optional[str]] = mapped_column(
-        String(50),
-        nullable=True
-    )
-
-    # Media
-    logo_url: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
-    )
-    cover_image_url: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
-    )
-
-    # Verification and status
-    status: Mapped[CompanyStatus] = mapped_column(
-        SQLEnum(CompanyStatus),
-        default=CompanyStatus.PENDING,
-        nullable=False,
-        index=True
-    )
-    verification_document_url: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
-    )
-    verification_notes: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
-    )
-    verified_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-    verified_by: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=True
-    )
-
-    # Social links
-    linkedin_url: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-    twitter_url: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-    github_url: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-
-    # Settings
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-        index=True
-    )
-    is_hiring: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-        index=True
-    )
-    allow_applications: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False
-    )
-
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    legal_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    website: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    industry: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    company_size: Mapped[Optional[CompanySize]] = mapped_column(SQLEnum(CompanySize), nullable=True, index=True)
+    
+    # Verification
+    status: Mapped[CompanyStatus] = mapped_column(SQLEnum(CompanyStatus), default=CompanyStatus.PENDING, nullable=False, index=True)
+    verified_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # System fields
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    is_hiring: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # Relationships with proper typing
+    # RELATIONSHIPS
+    # Рекрутеры компании
     recruiters: Mapped[List["Recruiter"]] = relationship(
         "Recruiter",
         back_populates="company",
         cascade="all, delete-orphan",
         lazy="select"
     )
+    
+    # Пользователь, который верифицировал компанию
     verified_by_user: Mapped[Optional["User"]] = relationship(
         "User",
         foreign_keys=[verified_by],
+        back_populates="verified_companies",
         lazy="select"
     )
+    
+    # Заявки в компанию
     applications: Mapped[List["Application"]] = relationship(
         "Application",
         back_populates="company",
         lazy="select"
     )
+    
+    # Вакансии компании
     jobs: Mapped[List["Job"]] = relationship(
         "Job",
         back_populates="company",
         cascade="all, delete-orphan",
         lazy="select"
     )
-
+    
     def __repr__(self) -> str:
         return f"<Company(id={self.id}, name={self.name}, status={self.status})>"
 
