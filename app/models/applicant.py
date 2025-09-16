@@ -7,13 +7,7 @@ from sqlalchemy.sql import func
 import uuid
 import enum
 
-from app.models.application import Application
-from app.models.user import User
-
-
-class Base(DeclarativeBase):
-    """Base class for all models."""
-    pass
+from app.core.database.database import Base
 
 
 class JobSearchStatus(str, enum.Enum):

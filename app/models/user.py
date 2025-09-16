@@ -8,10 +8,6 @@ import uuid
 import re
 
 from app.core.database.database import Base
-from app.models.applicant import Applicant
-from app.models.application import ApplicationModel
-from app.models.company import Company
-from app.models.recruiter import Recruiter
 
 
 class User(Base):
@@ -124,7 +120,7 @@ class User(Base):
     )
 
     # Связь с заявками как соискатель
-    applications: Mapped[List["ApplicationModel"]] = relationship(
+    applications: Mapped[List["Application"]] = relationship(
         "Application",
         back_populates="user",
         lazy="select"

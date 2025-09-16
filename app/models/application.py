@@ -7,16 +7,8 @@ from datetime import datetime, timedelta
 import uuid
 import enum
 
-from app.models.company import Company
-from app.models.job_position import Job
-from app.models.recruiter import Recruiter
-from app.models.user import User
 
-
-class Base(DeclarativeBase):
-    """Base class for all models."""
-    pass
-
+from app.core.database.database import Base
 
 class ApplicationStatus(str, enum.Enum):
     """Application status enum."""
@@ -37,8 +29,6 @@ class ApplicationSource(str, enum.Enum):
     REFERRAL = "referral"
     LINKEDIN = "linkedin"
     EMAIL = "email"
-
-
 class Application(Base):
     """Application model with modern SQLAlchemy 2.0 syntax."""
 
@@ -343,3 +333,4 @@ class Application(Base):
     def can_send_technical_test(self) -> bool:
         """Check if technical test can be sent."""
         return self.status in [ApplicationStatus.SCREENING, ApplicationStatus.INTERVIEWED]
+

@@ -207,8 +207,8 @@ class ApplicationSearchRequest(BaseModel):
     """Search request for applications."""
     filters: Optional[ApplicationFilters] = None
     search_query: Optional[str] = Field(None, max_length=200)  # Search in name, email, cover letter
-    sort_by: str = Field(default="applied_at", regex="^(applied_at|last_updated_at|status)$")
-    sort_order: str = Field(default="desc", regex="^(asc|desc)$")
+    sort_by: str = Field(default="applied_at", pattern="^(applied_at|last_updated_at|status)$")
+    sort_order: str = Field(default="desc", pattern="^(asc|desc)$")
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=20, ge=1, le=100)
 
@@ -241,7 +241,7 @@ class ApplicationStatusUpdate(BaseModel):
 class BulkApplicationUpdate(BaseModel):
     """Schema for bulk operations on applications."""
     application_ids: List[UUID] = Field(..., min_items=1, max_items=50)
-    action: str = Field(..., regex="^(reject|move_to_screening|move_to_interview|archive)$")
+    action: str = Field(..., pattern="^(reject|move_to_screening|move_to_interview|archive)$")
     notes: Optional[str] = Field(None, max_length=1000)
     reason: Optional[str] = Field(None, max_length=500)
 

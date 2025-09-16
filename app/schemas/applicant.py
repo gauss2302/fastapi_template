@@ -10,7 +10,7 @@ class ApplicantBase(BaseModel):
     years_of_experience: Optional[str] = Field(None, max_length=50)
     current_location: Optional[str] = Field(None, max_length=200)
     willing_to_relocate: bool = False
-    remote_work_preference: Optional[str] = Field(None, regex="^(remote_only|hybrid|onsite|flexible)$")
+    remote_work_preference: Optional[str] = Field(None, pattern="^(remote_only|hybrid|onsite|flexible)$")
 
     # Карьерные предпочтения
     desired_job_types: Optional[List[str]] = Field(default_factory=list)
@@ -36,8 +36,8 @@ class ApplicantBase(BaseModel):
     # Настройки
     is_actively_looking: bool = True
     is_open_to_opportunities: bool = True
-    job_search_status: str = Field(default="active", regex="^(active|passive|not_looking)$")
-    profile_visibility: str = Field(default="public", regex="^(public|recruiters_only|private)$")
+    job_search_status: str = Field(default="active", pattern="^(active|passive|not_looking)$")
+    profile_visibility: str = Field(default="public", pattern="^(public|recruiters_only|private)$")
     allow_recruiter_contact: bool = True
 
     additional_info: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -55,7 +55,7 @@ class ApplicantUpdate(ApplicantBase):
     years_of_experience: Optional[str] = Field(None, max_length=50)
     current_location: Optional[str] = Field(None, max_length=200)
     willing_to_relocate: Optional[bool] = None
-    remote_work_preference: Optional[str] = Field(None, regex="^(remote_only|hybrid|onsite|flexible)$")
+    remote_work_preference: Optional[str] = Field(None, pattern="^(remote_only|hybrid|onsite|flexible)$")
 
     desired_job_types: Optional[List[str]] = None
     desired_salary_min: Optional[str] = Field(None, max_length=100)
@@ -76,8 +76,8 @@ class ApplicantUpdate(ApplicantBase):
 
     is_actively_looking: Optional[bool] = None
     is_open_to_opportunities: Optional[bool] = None
-    job_search_status: Optional[str] = Field(None, regex="^(active|passive|not_looking)$")
-    profile_visibility: Optional[str] = Field(None, regex="^(public|recruiters_only|private)$")
+    job_search_status: Optional[str] = Field(None, pattern="^(active|passive|not_looking)$")
+    profile_visibility: Optional[str] = Field(None, pattern="^(public|recruiters_only|private)$")
     allow_recruiter_contact: Optional[bool] = None
 
     additional_info: Optional[Dict[str, Any]] = None

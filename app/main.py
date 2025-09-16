@@ -19,6 +19,7 @@ from app.middleware.rate_limiter.request_logging import RequestLoggingMiddleware
 config_structlog()
 logger = AppLogger("main")
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application", app_name=settings.APP_NAME, version=settings.APP_VERSION)

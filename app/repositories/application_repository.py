@@ -4,7 +4,7 @@ from typing import Optional, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions.exceptions import ConflictError
+from app.core.exceptions.exceptions import ConflictError, NotFoundError
 from app.schemas.application import ApplicationCreate, ApplicationUpdate
 from app.models.application import Application as ApplicationModel  # ORM-класс
 
@@ -25,6 +25,17 @@ class ApplicationRepository:
             .order_by(ApplicationModel.applied_at.desc())
         )
         return result.scalars().all()
+    
+    async def get_all_applications_by_userID(self, user_id: UUID) -> List[ApplicationModel]:
+        result = await self.db.execute(
+            select(ApplicationModel).where(ApplicationModel.user_id == user_id)
+        )
+        apps = result.scalars().all()
+        if not apps:
+            raise NotFoundError(f"No applications found for user {user_id}")
+        
+        return apps
+        
 
     async def create_application(
         self,
@@ -86,3 +97,14 @@ class ApplicationRepository:
         await self.db.delete(app)
         await self.db.flush()
         return True
+    
+    async def get_all_applications_of_recruiter(self, recruiter_id: UUID) -> List[ApplicationModel]:
+        result = await self.db.execute(
+            select(ApplicationModel).where(ApplicationModel.recruiter_id == recruiter_id)
+        )
+        
+        apps = result.scalars().all()
+        if not apps:
+            raise NotFoundError(f"No applicaitons found for recruiter {recruiter_id}")
+        
+        return apps

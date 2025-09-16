@@ -1,5 +1,5 @@
 import errno
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -35,7 +35,6 @@ class ApplicationService:
             recruiter_id=recruiter_id,
             company_id=company_id,
         )
-        # Pydantic v2: Config.from_attributes=True в ApplicationResponse
         return ApplicationResponse.model_validate(app)
 
     async def get_application_by_id(self, application_id: UUID) -> ApplicationResponse:
@@ -43,6 +42,12 @@ class ApplicationService:
         if result is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
         return ApplicationResponse.model_validate(result)
+    
+    async def get_all_applications_by_user_id(
+        self, user_id: UUID
+    ) -> List[ApplicationResponse]:
+        apps = await self.application_repo.get_all_applications_by_user_id(user_id)
+        return [ApplicationResponse.model_validate(a) for a in apps]
 
 
     async def update_application(self, application_id: UUID, payload: ApplicationUpdate) -> ApplicationResponse:
@@ -50,3 +55,10 @@ class ApplicationService:
         if result is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
         return ApplicationResponse.model_validate(result)
+
+
+    async def get_all_applications_by_recruiterId(self, recuiter_id: UUID) -> List[ApplicationResponse]:
+        result = self.application_repo.get_all_applications_of_recruiter(recuiter_id)
+        if result is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Applications not found for {recuiter_id}")
+        return [ApplicationResponse.model_validate(a) for a in result]
