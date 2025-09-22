@@ -16,7 +16,6 @@ router = APIRouter()
 
 
 @router.get("/me", response_model=User)
-@rate_limit
 async def get_my_profile(
         current_user: User = Depends(get_current_user),
 ) -> User:
@@ -25,7 +24,7 @@ async def get_my_profile(
 
 
 @router.put("/me", response_model=User)
-@rate_limit
+# @rate_limit
 async def update_my_profile(
         user_update: UserUpdate,
         current_user: User = Depends(get_current_user),

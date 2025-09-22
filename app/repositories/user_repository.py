@@ -26,6 +26,11 @@ class UserRepository:
             existing_google_user = await self.get_by_google_id(user_data.google_id)
             if existing_google_user:
                 raise ConflictError("Google account already linked to another user")
+            
+        if user_data.github_id:
+            existing_github_user = await self.get_by_github_id(user_data.github_id)
+            if existing_github_user:
+                raise ConflictError("GitHub account already linked to another user")
 
         user_dict = user_data.model_dump()
         if 'password' in user_dict and user_dict['password']:

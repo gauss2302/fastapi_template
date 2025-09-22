@@ -5,8 +5,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 import time
 
+from app.core.database.database import get_db
 from app.core.security.security import security_service
 from app.core.deps.dependencies import get_user_service
+from app.repositories.user_repository import UserRepository
 from app.schemas.user import User
 
 
@@ -61,37 +63,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return auth_header[7:]
         return None
 
-    async def _authenticate_token(self, token: str) -> tuple[Optional[User], Optional[str]]:
-        """Проверяет токен и возвращает пользователя + новый токен если нужно обновление"""
+    async def _authenticate_token(self, token: str) -> Optional[User]:
+        """Проверяет токен и возвращает пользователя"""
         # Проверяем JWT токен
         payload = security_service.verify_token(token)
         if not payload or not payload.sub:
             return None, None
 
-        # Проверяем не истекает ли токен скоро (в течение 5 минут)
-        current_time = time.time()
-        token_exp = payload.exp
-        time_until_expiry = token_exp - current_time
-        should_refresh = time_until_expiry < 300  # 5 минут
-
-        # Получаем пользователя из БД
-        user_service = await get_user_service()
         try:
             user_id = UUID(payload.sub)
-            user = await user_service.get_user_by_id(user_id)
-
-            if not user or not user.is_active:
-                return None, None
-
-            # Если токен скоро истечет, генерируем новый
-            new_token = None
-            if should_refresh:
-                new_token = security_service.create_access_token(user.id)
-
-            return user, new_token
-
-        except (ValueError, Exception):
-            return None, None
+            async for db in get_db():
+                user_repo = UserRepository(db)
+                db_user = await user_repo.get_by_id(user_id)
+                
+                if not db_user or not db_user.is_active:
+                    return None
+                
+                return User.model_validate(db_user)
+        
+        except (ValueError, Exception) as e:
+            print(f"Error in _authenticate_token: {e}")
+            return None
 
     def _auth_error(self, message: str) -> JSONResponse:
         """Возвращает ошибку аутентификации"""

@@ -121,7 +121,7 @@ async def get_company_locations(
 
 
 @router.post("/register", response_model=Company)
-@strict_rate_limit()
+# @strict_rate_limit()
 async def register_company(
         reg_data: CompanyRegistrationRequest,
         request: Request,
@@ -145,7 +145,7 @@ async def register_company(
 
 
 @router.get("/{company_id}", response_model=Company)
-@rate_limit
+# @rate_limit
 async def get_company_by_id(
         company_id: UUID,
         current_user: User = Depends(get_current_user),

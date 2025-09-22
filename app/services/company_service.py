@@ -48,7 +48,7 @@ class CompanyService:
         )
 
         # First recruiter gets special permissions and auto-approval
-        db_recruiter = await self.recruiter_repo.create(recruiter_data, created_by_user_id)
+        db_recruiter = await self.recruiter_repo.create_recruiter(recruiter_data, created_by_user_id)
 
         # Auto-approve first recruiter with admin permissions
         approval_data = RecruiterApproval(status=RecruiterStatus.APPROVED)
@@ -67,10 +67,9 @@ class CompanyService:
         )
         await self.recruiter_repo.update_permissions(db_recruiter.id, admin_permissions)
 
-        # TODO: Send email notification to admins for company verification
-        # await self.email_service.send_company_registration_notification(db_company)
-
         return Company.model_validate(db_company)
+    
+    
 
     async def get_company_by_id(self, company_id: UUID) -> Optional[Company]:
         """Get company by ID"""
