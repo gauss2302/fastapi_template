@@ -7,6 +7,7 @@ from app.core.config.config import settings
 class RedisService:
     def __init__(self) -> None:
         self.redis: Optional[aioredis.Redis] = None
+        self.redis_url: str = str(settings.REDIS_URL)
 
     async def init_redis(self) -> None:
         """Initialize Redis connection."""

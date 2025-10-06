@@ -2,9 +2,10 @@ import time
 import hashlib
 from enum import Enum
 from typing import Optional, Callable, Dict, Any, Union
+import inspect
 from functools import wraps
 
-from fastapi import Request, HTTPException, status
+from fastapi import Depends, Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -12,6 +13,7 @@ from limits import parse
 from limits.storage import RedisStorage, MemoryStorage
 from limits.strategies import MovingWindowRateLimiter
 
+from app.core.config.config import settings
 from app.core.redis.redis import RedisService
 
 
@@ -48,12 +50,31 @@ class RateLimiter:
     }
 
     def __init__(self, redis_service: Optional[RedisService] = None):
-        if redis_service and redis_service.redis:
-            self.storage = RedisStorage(
-                uri=redis_service.redis.connection_pool.connection_kwargs.get(
-                    'host', 'redis://localhost:6379'
-                )
-            )
+        if redis_service:
+            uri: Optional[str] = getattr(redis_service, 'redis_url', None)
+
+            if redis_service.redis:
+                connection_kwargs = redis_service.redis.connection_pool.connection_kwargs
+                host = connection_kwargs.get('host', 'localhost')
+                port = connection_kwargs.get('port', 6379)
+                db = connection_kwargs.get('db', 0)
+                username = connection_kwargs.get('username')
+                password = connection_kwargs.get('password')
+                ssl = connection_kwargs.get('ssl', False)
+
+                scheme = 'rediss' if ssl else 'redis'
+                credentials = ''
+                if username or password:
+                    user = username or ''
+                    pwd = password or ''
+                    credentials = f"{user}:{pwd}@"
+
+                uri = f"{scheme}://{credentials}{host}:{port}/{db}"
+
+            if uri:
+                self.storage = RedisStorage(uri=uri)
+            else:
+                self.storage = MemoryStorage()
         else:
             self.storage = MemoryStorage()
 
@@ -110,14 +131,14 @@ class RateLimiter:
                     "Retry-After": str(int(window_stats.reset_time)),
                 }
 
-                return True, headers
+                return False, headers
 
         main_limit = rate_limits[0]
         window_stats = self.limiter.get_window_stats(main_limit, key)
 
         headers = {
             "X-RateLimit-Limit": str(main_limit.amount),
-            "X-RateLimit-Remaining": str(max(0, main_limit.amount - window_stats.remaining)),
+            "X-RateLimit-Remaining": str(max(0, int(window_stats.remaining))),
             "X-RateLimit-Reset": str(int(time.time() + window_stats.reset_time)),
         }
 
@@ -128,21 +149,84 @@ class RateLimiter:
         return limit_string
 
 
+def _get_or_create_rate_limiter(request: Request) -> RateLimiter:
+    """Fetch shared rate limiter instance from app state or create one on demand."""
+
+    rate_limiter = getattr(request.app.state, 'rate_limiter', None)
+    if rate_limiter is None:
+        redis_service = getattr(request.app.state, 'redis_service', None)
+        rate_limiter = RateLimiter(redis_service)
+        request.app.state.rate_limiter = rate_limiter
+        if redis_service is not None:
+            request.app.state.redis_service = redis_service
+
+    return rate_limiter
+
+
+async def _enforce_rate_limit(
+        request: Request,
+        limit_type: Union[RateLimitType, str],
+        identifier_func: Optional[Callable],
+        skip_condition: Optional[Callable]
+) -> None:
+    rate_limiter = _get_or_create_rate_limiter(request)
+
+    is_allowed, headers = await rate_limiter.check_rate_limit(
+        request,
+        limit_type,
+        identifier_func,
+        skip_condition,
+    )
+
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers=headers,
+        )
+
+
+def _build_rate_limit_dependency(
+        limit_type: Union[RateLimitType, str] = RateLimitType.API,
+        identifier_func: Optional[Callable] = None,
+        skip_condition: Optional[Callable] = None,
+):
+    async def dependency(request: Request) -> None:
+        await _enforce_rate_limit(request, limit_type, identifier_func, skip_condition)
+
+    return dependency
+
+
+def rate_limit_dependency(
+        limit_type: Union[RateLimitType, str] = RateLimitType.API,
+        identifier_func: Optional[Callable] = None,
+        skip_condition: Optional[Callable] = None,
+):
+    """Create a FastAPI Depends object for the specified rate limit."""
+
+    return Depends(_build_rate_limit_dependency(limit_type, identifier_func, skip_condition))
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware for global application."""
 
     def __init__(self, app, redis_service: Optional[RedisService] = None):
         super().__init__(app)
+        self.redis_service = redis_service
         self.rate_limiter = RateLimiter(redis_service)
+        self._attach_to_app_state(app)
 
         self.path_limits = {
-            "/api/v1/auth": RateLimitType.AUTH,
-            "/api/v1/users": RateLimitType.API,
+            f"{settings.API_V1_STR}/auth": RateLimitType.AUTH,
+            f"{settings.API_V1_STR}/users": RateLimitType.API,
+            settings.API_V1_STR: RateLimitType.API,
             "/health": RateLimitType.PUBLIC
         }
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """Applicaiton rate limiting based on the path pattern"""
+
+        self._attach_to_app_state(request.app)
 
         if self._should_skip(request):
             return await call_next(request)
@@ -171,7 +255,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _should_skip(self, request: Request) -> bool:
         """Check if request should skip rate limiting."""
-        skip_paths = ["/docs", "/redoc", "/openapi.json", "/favicon.ico"]
+        skip_paths = {
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/favicon.ico",
+            f"{settings.API_V1_STR}/docs",
+            f"{settings.API_V1_STR}/redoc",
+            f"{settings.API_V1_STR}/openapi.json",
+            "/docs/oauth2-redirect",
+        }
         return any(request.url.path.startswith(path) for path in skip_paths)
 
     def _get_limit_type(self, request: Request) -> Optional[RateLimitType]:
@@ -181,6 +274,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if path.startswith(pattern):
                 return limit_type
         return None
+
+    def _attach_to_app_state(self, target_app: Any) -> None:
+        """Ensure shared limiter and redis service are available via app state when supported."""
+
+        state = getattr(target_app, 'state', None)
+        if state is None:
+            return
+
+        if getattr(state, 'rate_limiter', None) is None:
+            state.rate_limiter = self.rate_limiter
+
+        if self.redis_service is not None and getattr(state, 'redis_service', None) is None:
+            state.redis_service = self.redis_service
 
 
 def rate_limit(
@@ -198,36 +304,27 @@ def rate_limit(
     """
 
     def decorator(func: Callable) -> Callable:
+        dependency_callable = _build_rate_limit_dependency(
+            limit_type=limit_type,
+            identifier_func=identifier_func,
+            skip_condition=skip_condition,
+        )
+
+        original_signature = inspect.signature(func)
+        dependency_param = inspect.Parameter(
+            name="_rate_limit_guard",
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=Depends(dependency_callable),
+            annotation=inspect._empty,
+        )
+        new_parameters = list(original_signature.parameters.values()) + [dependency_param]
+        new_signature = original_signature.replace(parameters=new_parameters)
+
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            request = None
-
-            for arg in args:
-                if isinstance(arg, Request):
-                    request = arg
-                    break
-
-            if not request:
-                for value in kwargs.values():
-                    if isinstance(value, Request):
-                        request = value
-                        break
-
-
-            if request:
-                redis_service = getattr(request.app.state, 'redis_service', None)
-                rate_limiter = RateLimiter(redis_service)
-
-                is_allowed, headers = await rate_limiter.check_rate_limit(
-                    request, limit_type, identifier_func, skip_condition)
-
-                if not is_allowed:
-                    raise HTTPException(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail="Rate limit exceeds",
-                        headers=headers)
-
             return await func(*args, **kwargs)
+
+        wrapper.__signature__ = new_signature
         return wrapper
     return decorator
 
@@ -240,12 +337,22 @@ def auth_rate_limit(func: Callable = None, **kwargs):
         return rate_limit(RateLimitType.AUTH, **kwargs)(func)
 
 
+def auth_rate_limit_dependency(**kwargs):
+    """Dependency shortcut for authentication rate limits."""
+    return rate_limit_dependency(RateLimitType.AUTH, **kwargs)
+
+
 def api_rate_limit(func: Callable = None, **kwargs):
     """Rate limit for general API endpoints."""
     if func is None:
         return lambda f: rate_limit(RateLimitType.API, **kwargs)(f)
     else:
         return rate_limit(RateLimitType.API, **kwargs)(func)
+
+
+def api_rate_limit_dependency(**kwargs):
+    """Dependency shortcut for general API rate limits."""
+    return rate_limit_dependency(RateLimitType.API, **kwargs)
 
 
 def strict_rate_limit(func: Callable = None, **kwargs):
@@ -256,12 +363,22 @@ def strict_rate_limit(func: Callable = None, **kwargs):
         return rate_limit(RateLimitType.STRICT, **kwargs)(func)
 
 
+def strict_rate_limit_dependency(**kwargs):
+    """Dependency shortcut for strict rate limits."""
+    return rate_limit_dependency(RateLimitType.STRICT, **kwargs)
+
+
 def upload_rate_limit(func: Callable = None, **kwargs):
     """Rate limit for file upload endpoints."""
     if func is None:
         return lambda f: rate_limit(RateLimitType.UPLOAD, **kwargs)(f)
     else:
         return rate_limit(RateLimitType.UPLOAD, **kwargs)(func)
+
+
+def upload_rate_limit_dependency(**kwargs):
+    """Dependency shortcut for upload rate limits."""
+    return rate_limit_dependency(RateLimitType.UPLOAD, **kwargs)
 
 
 # Helper functions for identifier generation
@@ -315,10 +432,15 @@ __all__ = [
     'RateLimiter',
     'RateLimitMiddleware',
     'rate_limit',
+    'rate_limit_dependency',
     'auth_rate_limit',
+    'auth_rate_limit_dependency',
     'api_rate_limit',
+    'api_rate_limit_dependency',
     'strict_rate_limit',
+    'strict_rate_limit_dependency',
     'upload_rate_limit',
+    'upload_rate_limit_dependency',
     'user_based_identifier',
     'ip_based_identifier',
     'device_based_identifier',

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logging.logger import config_structlog, AppLogger
@@ -42,11 +43,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url=f"{settings.API_V1_STR}/docs",
-    redoc_url=f"{settings.API_V1_STR}/redoc",
+    openapi_url="/openapi.json",
+    docs_url=None,
+    redoc_url=None,
     lifespan=lifespan,
 )
+
+app.state.redis_service = redis_service
 
 app.add_middleware(RateLimitMiddleware, redis_service=redis_service)
 app.add_middleware(RequestLoggingMiddleware)
@@ -183,6 +186,22 @@ async def log_requests(request: Request, call_next):
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui():
+    """Serve Swagger UI."""
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{settings.APP_NAME} - API Docs",
+        oauth2_redirect_url="/docs/oauth2-redirect",
+    )
+
+
+@app.get("/docs/oauth2-redirect", include_in_schema=False)
+async def swagger_ui_redirect():
+    """Serve OAuth2 redirect page for Swagger."""
+    return get_swagger_ui_oauth2_redirect_html()
+
+
 # Root endpoint
 @app.get("/")
 async def root():
@@ -190,7 +209,7 @@ async def root():
     return {
         "message": f"Welcome to {settings.APP_NAME}",
         "version": settings.APP_VERSION,
-        "docs": f"{settings.API_V1_STR}/docs",
+        "docs": "/docs",
     }
 
 

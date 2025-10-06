@@ -1,6 +1,6 @@
 from typing import Optional
 from uuid import UUID
-from fastapi import Request
+from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 import time
@@ -19,6 +19,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.public_paths = {
             "/health",
             "/docs",
+            "/docs/oauth2-redirect",
             "/redoc",
             "/openapi.json",
             "/api/v1/auth",
