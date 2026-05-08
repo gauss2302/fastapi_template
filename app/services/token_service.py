@@ -72,7 +72,7 @@ class TokenService:
         if await self.is_token_blacklisted(refresh_token):
             return False
 
-        payload = security_service.verify_token(refresh_token)
+        payload = security_service.verify_token(refresh_token, expected_type="refresh")
         if not payload or payload.sub != str(user_id):
             return False
 

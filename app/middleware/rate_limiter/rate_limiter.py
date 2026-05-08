@@ -27,15 +27,15 @@ class RateLimitType(str, Enum):
 
 
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP with proxy support."""
+    """Extract client IP with reverse-proxy support."""
 
-    forwarded_for = request.headers.get("x-real-ip")
+    forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
 
     real_ip = request.headers.get("x-real-ip")
     if real_ip:
-        return real_ip
+        return real_ip.split(",")[0].strip()
 
     return request.client.host if request.client else "unknown"
 
@@ -418,8 +418,11 @@ def device_based_identifier(request: Request) -> str:
 
 # Skip conditions
 def admin_bypass_condition(request: Request) -> bool:
-    """Skip rate limiting for admin users."""
-    return request.headers.get("x-admin-bypass") == "secret_key"
+    """Skip rate limits only when a server-side secret is configured and matches."""
+    secret = settings.RATE_LIMIT_ADMIN_BYPASS_SECRET
+    if not secret:
+        return False
+    return request.headers.get("x-admin-bypass") == secret
 
 
 def premium_user_condition(request: Request) -> bool:

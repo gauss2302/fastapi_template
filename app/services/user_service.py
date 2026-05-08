@@ -202,7 +202,7 @@ class UserService:
         )
 
         # Get user from token payload
-        payload = security_service.verify_token(new_tokens["access_token"])
+        payload = security_service.verify_token(new_tokens["access_token"], expected_type="access")
         if not payload or not payload.sub:
             raise AuthenticationError("Invalid token")
 
@@ -400,7 +400,7 @@ class UserService:
     async def refresh_token(self, old_refresh_token: str) -> tuple[User, dict]:
         """Refresh access token and rotate refresh token."""
         # Verify old refresh token
-        payload = security_service.verify_token(old_refresh_token)
+        payload = security_service.verify_token(old_refresh_token, expected_type="refresh")
         if not payload or not payload.sub:
             raise AuthenticationError("Invalid refresh token")
 

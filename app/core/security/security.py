@@ -1,15 +1,24 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
+
 import jwt
 from passlib.context import CryptContext
+
 from app.core.config.config import settings
 from app.schemas.user import TokenPayload
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+JWT_TOKEN_TYPE_ACCESS = "access"
+JWT_TOKEN_TYPE_REFRESH = "refresh"
+
 
 class SecurityService:
+    @staticmethod
+    def _now_utc() -> datetime:
+        return datetime.now(timezone.utc)
+
     @staticmethod
     def create_access_token(
             subject: str | UUID,
@@ -17,16 +26,16 @@ class SecurityService:
     ) -> str:
         """Create JWT access token."""
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = SecurityService._now_utc() + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = SecurityService._now_utc() + timedelta(
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
 
         to_encode = {
             "exp": expire,
             "sub": str(subject),
-            "type": "access"
+            "type": JWT_TOKEN_TYPE_ACCESS,
         }
         return jwt.encode(
             to_encode,
@@ -41,16 +50,16 @@ class SecurityService:
     ) -> str:
         """Create JWT refresh token."""
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = SecurityService._now_utc() + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = SecurityService._now_utc() + timedelta(
                 minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
             )
 
         to_encode = {
             "exp": expire,
             "sub": str(subject),
-            "type": "refresh"
+            "type": JWT_TOKEN_TYPE_REFRESH,
         }
         return jwt.encode(
             to_encode,
@@ -59,17 +68,27 @@ class SecurityService:
         )
 
     @staticmethod
-    def verify_token(token: str) -> Optional[TokenPayload]:
-        """Verify JWT token and return payload."""
+    def verify_token(
+        token: str,
+        *,
+        expected_type: Optional[str] = None,
+    ) -> Optional[TokenPayload]:
+        """Verify JWT signature and expiry; optionally enforce token type (access vs refresh)."""
         try:
             payload = jwt.decode(
                 token,
                 settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM]
+                algorithms=[settings.ALGORITHM],
             )
-            return TokenPayload(**payload)
         except jwt.PyJWTError:
             return None
+
+        token_type = payload.get("type")
+        if expected_type is not None:
+            if token_type != expected_type:
+                return None
+
+        return TokenPayload(**payload)
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
