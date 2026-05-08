@@ -73,7 +73,7 @@ class SecurityService:
         *,
         expected_type: Optional[str] = None,
     ) -> Optional[TokenPayload]:
-        """Verify JWT signature and expiry; optionally enforce token type (access vs refresh)."""
+        """Verify JWT signature and expiry; enforce access vs refresh with optional legacy migration."""
         try:
             payload = jwt.decode(
                 token,
@@ -84,10 +84,30 @@ class SecurityService:
             return None
 
         token_type = payload.get("type")
-        if expected_type is not None:
-            if token_type != expected_type:
-                return None
 
+        if expected_type is None:
+            return TokenPayload(**payload)
+
+        if expected_type == JWT_TOKEN_TYPE_ACCESS:
+            if token_type == JWT_TOKEN_TYPE_REFRESH:
+                return None
+            if token_type == JWT_TOKEN_TYPE_ACCESS:
+                return TokenPayload(**payload)
+            if token_type is None and settings.JWT_ACCESS_ALLOW_MISSING_TYPE_CLAIM:
+                return TokenPayload(**payload)
+            return None
+
+        if expected_type == JWT_TOKEN_TYPE_REFRESH:
+            if token_type == JWT_TOKEN_TYPE_ACCESS:
+                return None
+            if token_type == JWT_TOKEN_TYPE_REFRESH:
+                return TokenPayload(**payload)
+            if token_type is None and settings.JWT_REFRESH_ALLOW_MISSING_TYPE_CLAIM:
+                return TokenPayload(**payload)
+            return None
+
+        if token_type != expected_type:
+            return None
         return TokenPayload(**payload)
 
     @staticmethod

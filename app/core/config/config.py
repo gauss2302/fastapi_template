@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     ALGORITHM: str = "HS256"
 
+    # JWT migration: tokens without `type` claim (pre-hardening issuers).
+    # After all sessions re-issue, set refresh flag to False in production.
+    JWT_REFRESH_ALLOW_MISSING_TYPE_CLAIM: bool = Field(
+        default=True,
+        description="Accept legacy refresh JWTs that omit the `type` claim.",
+    )
+    JWT_ACCESS_ALLOW_MISSING_TYPE_CLAIM: bool = Field(
+        default=False,
+        description="Accept legacy access JWTs without `type`; enable only during migration.",
+    )
+
     # Database settings
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER")
     POSTGRES_USER: str = os.getenv("POSTGRES_USER")
