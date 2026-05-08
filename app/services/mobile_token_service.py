@@ -57,7 +57,7 @@ class MobileTokenService:
     ) -> Dict[str, Any]:
         """Refresh mobile tokens and update session."""
         # Verify refresh token
-        payload = security_service.verify_token(refresh_token)
+        payload = security_service.verify_token(refresh_token, expected_type="refresh")
         if not payload or not payload.sub:
             raise AuthenticationError("Invalid refresh token")
 
@@ -277,7 +277,7 @@ class MobileTokenService:
                 # Verify refresh token is still valid
                 refresh_token = session_data.get("refresh_token")
                 if refresh_token:
-                    payload = security_service.verify_token(refresh_token)
+                    payload = security_service.verify_token(refresh_token, expected_type="refresh")
                     if not payload:
                         await self.redis_service.delete(key)
                         cleaned += 1

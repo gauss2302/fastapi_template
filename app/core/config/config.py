@@ -7,7 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env.example",
+        # Local secrets in `.env` override documented defaults from `.env.example`.
+        env_file=(".env.example", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -24,6 +25,17 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     ALGORITHM: str = "HS256"
+
+    # JWT migration: tokens without `type` claim (pre-hardening issuers).
+    # After all sessions re-issue, set refresh flag to False in production.
+    JWT_REFRESH_ALLOW_MISSING_TYPE_CLAIM: bool = Field(
+        default=True,
+        description="Accept legacy refresh JWTs that omit the `type` claim.",
+    )
+    JWT_ACCESS_ALLOW_MISSING_TYPE_CLAIM: bool = Field(
+        default=False,
+        description="Accept legacy access JWTs without `type`; enable only during migration.",
+    )
 
     # Database settings
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER")
@@ -65,10 +77,16 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI")
 
-    # GitHub OAuath settigns
+    # GitHub OAuth settings
     GITHUB_CLIENT_ID: str = os.getenv("GITHUB_CLIENT_ID", "")
     GITHUB_CLIENT_SECRET: str = os.getenv("GITHUB_CLIENT_SECRET", "")
     GITHUB_REDIRECT_URI: str = os.getenv("GITHUB_REDIRECT_URI", "")
+
+    # Rate limiting: if unset, admin bypass header is never honored (secure default).
+    RATE_LIMIT_ADMIN_BYPASS_SECRET: Optional[str] = Field(
+        default=None,
+        description="Optional secret; x-admin-bypass must match exactly to skip limits.",
+    )
 
     # CORS settings
     BACKEND_CORS_ORIGINS: list[str] = Field(

@@ -191,11 +191,11 @@ async def get_job_service(
 
 
 # Application Related Dependencies
-async def get_applicaiton_repository(db: AsyncSession = Depends(get_db)) -> ApplicationRepository:
+async def get_application_repository(db: AsyncSession = Depends(get_db)) -> ApplicationRepository:
     return ApplicationRepository(db)
 
 async def get_application_service(
-        application_repository: ApplicationRepository = Depends(get_applicaiton_repository),
+        application_repository: ApplicationRepository = Depends(get_application_repository),
         company_repository: CompanyRepository = Depends(get_company_repository),
         recruiter_repo: RecruiterRepository = Depends(get_recruiter_repository)
 ) -> ApplicationService:

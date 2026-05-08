@@ -21,6 +21,7 @@ from app.core.deps.dependencies import (
 )
 from app.core.exceptions.exceptions import AuthenticationError, ConflictError
 
+from app.core.config.config import settings
 from app.middleware.rate_limiter.rate_limiter import (
     auth_rate_limit,
     strict_rate_limit,
@@ -66,7 +67,7 @@ async def web_login(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,
-            secure=True,  # HTTPS only in production
+            secure=settings.SECURE_COOKIES,
             samesite="strict",
             max_age=tokens["refresh_expires_in"],
             path="/api/v1/auth"  # Restrict to auth endpoints
@@ -145,7 +146,7 @@ async def web_google_callback(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,
-            secure=True,
+            secure=settings.SECURE_COOKIES,
             samesite="strict",
             max_age=tokens["refresh_expires_in"],
             path="/api/v1/auth"
@@ -191,7 +192,7 @@ async def web_google_token_auth(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,
-            secure=True,
+            secure=settings.SECURE_COOKIES,
             samesite="strict",
             max_age=tokens["refresh_expires_in"],
             path="/api/v1/auth"
@@ -262,7 +263,7 @@ async def web_refresh_token(
             key="refresh_token",
             value=new_tokens["refresh_token"],
             httponly=True,
-            secure=True,
+            secure=settings.SECURE_COOKIES,
             samesite="strict",
             max_age=new_tokens["refresh_expires_in"],
             path="/api/v1/auth"
@@ -279,7 +280,8 @@ async def web_refresh_token(
         # Clear invalid refresh token cookie
         response.delete_cookie(
             key="refresh_token",
-            path="/api/v1/auth"
+            path="/api/v1/auth",
+            secure=settings.SECURE_COOKIES,
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
@@ -302,7 +304,8 @@ async def web_logout(
     # Clear refresh token cookie
     response.delete_cookie(
         key="refresh_token",
-        path="/api/v1/auth"
+        path="/api/v1/auth",
+        secure=settings.SECURE_COOKIES,
     )
 
     return {"message": "Successfully logged out"}
